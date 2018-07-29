@@ -171,7 +171,7 @@ func TestAddComplaint(t *testing.T) {
 		info.setRemoteQuotaUser(test.remoteQuotaUser)
 		info.enableCertQuota(test.enableCertQuota)
 		pool := loadCertsIntoPoolOrDie(t, test.chain)
-		reqBody, addComplaintReq := createJSONComplaint(t, *pool, test.complaint)
+		reqBody, addComplaintReq := createJSONAddComplaintRequest(t, *pool, test.complaint)
 
 		if test.toSign {
 			merkleLeaf := ct.CreateJSONMerkleTreeLeaf(addComplaintReq, fakeTimeMillis)
@@ -304,7 +304,7 @@ func makeAddComplaintRequest(t *testing.T, li *logInfo, body io.Reader) *httptes
 	return makeAddChainRequestInternal(t, handler, "add-complaint", body)
 }
 
-func createJSONComplaint(t *testing.T, p PEMCertPool, complaint Complaint) (io.Reader, AddComplaintRequest) {
+func createJSONAddComplaintRequest(t *testing.T, p PEMCertPool, complaint Complaint) (io.Reader, AddComplaintRequest) {
 	t.Helper()
 	var req AddComplaintRequest
 	for _, rawCert := range p.RawCertificates() {
