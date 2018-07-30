@@ -88,6 +88,7 @@ const (
 	AddChainName          = EntrypointName("AddChain")
 	AddComplaintName		  = EntrypointName("AddComplaint")
 	AddPreChainName       = EntrypointName("AddPreChain")
+	AddResolutionName     = EntrypointName("AddResolution")
 	GetSTHName            = EntrypointName("GetSTH")
 	GetSTHConsistencyName = EntrypointName("GetSTHConsistency")
 	GetProofByHashName    = EntrypointName("GetProofByHash")
@@ -121,7 +122,8 @@ func setupMetrics(mf monitoring.MetricFactory) {
 }
 
 // Entrypoints is a list of entrypoint names as exposed in statistics/logging.
-var Entrypoints = []EntrypointName{AddChainName, AddComplaintName, AddPreChainName, GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName, GetRootsName, GetEntryAndProofName}
+var Entrypoints = []EntrypointName{AddChainName, AddComplaintName, AddPreChainName, AddResolutionName,
+	GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName, GetRootsName, GetEntryAndProofName}
 
 // PathHandlers maps from a path to the relevant AppHandler instance.
 type PathHandlers map[string]AppHandler
@@ -274,8 +276,10 @@ func (li *logInfo) Handlers(prefix string) PathHandlers {
 
 	// Bind the logInfo instance to give an AppHandler instance for each endpoint.
 	ph := PathHandlers{
-		prefix + ct.AddChainPath:          AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
 		prefix + AddComplaintPath:			 	 AppHandler{Info: li, Handler: addComplaint, Name: AddComplaintName, Method: http.MethodPost},
+		prefix + AddResolutionPath:			 	 AppHandler{Info: li, Handler: addResolution, Name: AddResolutionName, Method: http.MethodPost},
+
+		prefix + ct.AddChainPath:          AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
 		prefix + ct.AddPreChainPath:       AppHandler{Info: li, Handler: addPreChain, Name: AddPreChainName, Method: http.MethodPost},
 		prefix + ct.GetSTHPath:            AppHandler{Info: li, Handler: getSTH, Name: GetSTHName, Method: http.MethodGet},
 		prefix + ct.GetSTHConsistencyPath: AppHandler{Info: li, Handler: getSTHConsistency, Name: GetSTHConsistencyName, Method: http.MethodGet},

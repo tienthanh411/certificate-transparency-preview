@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Content of this file should be moved to github.com/certificate-transparency-go/types.go
+// in production code.
+
 package preview
 
 import (
@@ -29,7 +32,7 @@ const (
 const (
 	AddPreviewChainPath = "/ct/v1/add-preview-chain"
 	AddComplaintPath    = "/ct/v1/add-complaint"
-	AddResolutionpath   = "/ct/v1/add-resolution"
+	AddResolutionPath   = "/ct/v1/add-resolution"
 )
 
 // LogEntryType constants. Extends the types defined in certificate-transparency-go/types.go
@@ -48,7 +51,7 @@ const (
 	LogoImpersonationComplaintType    ComplaintType = 2
 )
 
-// PreCert represents a Precertificate (section 3.2).
+// Complaint represents a complained filed by a trusted CA
 type Complaint struct {
 	SerialNumber []byte              `json:"serial"`
 	Reason       ComplaintType       `json:"reason"`
@@ -61,4 +64,17 @@ type Complaint struct {
 type AddComplaintRequest struct {
 	Chain     [][]byte `json:"chain"`
 	Complaint `json:"content"`
+}
+
+// Resolution indicates a complaint is not true
+type Resolution struct {
+	ComplaintID []byte              `json:"complaintId"`
+	Signature   tls.DigitallySigned `json:"signature"`
+}
+
+// AddResolutionRequest represents the JSON request body sent to the
+// add-resolution POST method
+type AddResolutionRequest struct {
+	Chain      [][]byte `json:"chain"`
+	Resolution `json:"content"`
 }

@@ -105,6 +105,68 @@ func addComplaint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *ht
 	return http.StatusOK, nil
 }
 
+func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
+	var err error
+	method := AddComplaintName
+
+	// Check the contents of the request and convert to slice of certificates.
+	addResolutionReq, err := parseBodyAsAddResolutionRequest(li, r)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to parse add-resolution body: %s", err)
+	}
+
+	chain, err := verifyAddResolution(li, addResolutionReq)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to verify add-resolution contents: %s", err)
+	}
+
+	// Get the current time in the form used throughout RFC6962, namely milliseconds since Unix
+	// epoch, and use this throughout.
+	timeMillis := uint64(li.TimeSource.Now().UnixNano() / millisPerNano)
+
+	// Build the MerkleTreeLeaf that gets sent to the backend, and make a trillian.LogLeaf for it.
+	merkleLeaf := ct.CreateJSONMerkleTreeLeaf(addResolutionReq, timeMillis)
+	if merkleLeaf == nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf")
+	}
+
+	leaf, err := buildLogLeafForJSONMerkleTreeLeaf(li, *merkleLeaf, 0, addResolutionReq)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to build LogLeaf: %s", err)
+	}
+
+	// Send the Merkle tree leaf on to the Log server.
+	queuedLeaf, err := queueLogLeaf(li, leaf, chain, r, method, ctx)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	// Always use the returned leaf as the basis for an SCT.
+	sct, err := generateSCT(li, queuedLeaf)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	sctBytes, err := tls.Marshal(*sct)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to marshall SCT: %s", err)
+	}
+
+	// We could possibly fail to issue the SCT after this but it's v. unlikely.
+	li.RequestLog.IssueSCT(ctx, sctBytes)
+	// The response of AddResolutionRequest is similar to AddChainRequest
+	err = marshalAndWriteAddChainResponse(sct, li.signer, w)
+	if err != nil {
+		// reason is logged and http status is already set
+		return http.StatusInternalServerError, fmt.Errorf("failed to write response: %s", err)
+	}
+	glog.V(3).Infof("%s: %s <= SCT", li.LogPrefix, method)
+	if sct.Timestamp == timeMillis {
+		lastSCTTimestamp.Set(float64(sct.Timestamp), strconv.FormatInt(li.logID, 10))
+	}
+
+	return http.StatusOK, nil
+}
+
 func queueLogLeaf(li *logInfo, leaf trillian.LogLeaf, chain []*x509.Certificate,
 	r *http.Request, method EntrypointName, ctx context.Context) (*trillian.QueuedLogLeaf, error) {
 	req := trillian.QueueLeavesRequest{
@@ -210,6 +272,49 @@ func verifyAddComplaint(li *logInfo, req AddComplaintRequest) ([]*x509.Certifica
 	return chain, nil
 }
 
+// verifyAddResolution is used by add-resolution. It checks whether the given
+// AddResolutionRequest is valid and returns the parsed certificate chain in the request.
+func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certificate, error) {
+	var err error
+	// The chain that signed the complaint must origin from a trusted root CA
+	chain, err := ValidateChain(req.Chain, li.validationOpts)
+	if err != nil {
+		return nil, fmt.Errorf("resolution chain failed to verify: %s", err)
+	}
+
+	// The end of the chain must be a CA certificate
+	if !chain[0].IsCA {
+		return nil, fmt.Errorf("complaint chain not ended with a CA certificate")
+	}
+
+	// The signature must be valid
+	if err = verifyResolutionSignature(chain[0].PublicKey, req.Resolution); err != nil {
+		return nil, err
+	}
+
+	// Since the ComplaintID is the SHA256 of the corresponding Complaint,
+	// it must be 32-byte long
+	if len(req.Resolution.ComplaintID) != 32 {
+		return nil, fmt.Errorf("complaintID is supposed to be 32-byte long, got %d bytes", len(req.Resolution.ComplaintID))
+	}
+	return chain, nil
+}
+
+func verifyResolutionSignature(pubKey crypto.PublicKey, r Resolution) error {
+	tbsResolution := Resolution{
+		ComplaintID:       r.ComplaintID,
+	}
+	tbsBytes, err := json.Marshal(tbsResolution)
+	if err != nil {
+		return fmt.Errorf("unable to verify signature: %v", err)
+	}
+	err = tls.VerifySignature(pubKey, tbsBytes, r.Signature)
+	if err != nil {
+		return fmt.Errorf("invalid signature: %v", err)
+	}
+	return nil
+}
+
 func verifyComplaintSignature(pubKey crypto.PublicKey, c Complaint) error {
 	tbsComplaint := Complaint{
 		Reason:       c.Reason,
@@ -256,6 +361,35 @@ func parseBodyAsAddComplaintRequest(li *logInfo, r *http.Request) (AddComplaintR
 	if len(req.Complaint.Proof) == 0 {
 		glog.V(1).Infof("%s: Complaint proof is empty: %s", li.LogPrefix, body)
 		return AddComplaintRequest{}, errors.New("complaint proof was empty")
+	}
+
+	return req, nil
+}
+
+// parseBodyAsAddResolutionRequest parses the given HTTP request's body as
+// a AddResolutionRequest JSON object.
+func parseBodyAsAddResolutionRequest(li *logInfo, r *http.Request) (AddResolutionRequest, error) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.V(1).Infof("%s: Failed to read request body: %v", li.LogPrefix, err)
+		return AddResolutionRequest{}, err
+	}
+
+	var req AddResolutionRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		glog.V(1).Infof("%s: Failed to parse request body: %v", li.LogPrefix, err)
+		return AddResolutionRequest{}, err
+	}
+
+	// The cert chain is not allowed to be empty. We'll defer other validation for later
+	if len(req.Chain) == 0 {
+		glog.V(1).Infof("%s: Request chain is empty: %s", li.LogPrefix, body)
+		return AddResolutionRequest{}, errors.New("cert chain was empty")
+	}
+
+	if len(req.Resolution.ComplaintID) == 0 {
+		glog.V(1).Infof("%s: ComplaintID is empty: %s", li.LogPrefix, body)
+		return AddResolutionRequest{}, errors.New("complaint id was empty")
 	}
 
 	return req, nil
