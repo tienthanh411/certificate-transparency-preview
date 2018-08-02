@@ -5,7 +5,7 @@ This repository holds a branch of the [Certificate Transparency](https://www.cer
  - complaints about any certificates in the log
  - resolutions of the complaints
 
-The structure of the repository and how to build the code remain the same as the original [Certificate Transparency](https://github.com/google/certificate-transparency-go) repository.
+The structure of the repository and how to build the code remain the same as the original [Certificate Transparency](https://github.com/google/certificate-transparency-go) repository. However, since the original package names have not been changed, it is required to relocate the local location of this go package from "..github.com/tienthanh411/certificate-transparency-preview" to "..github.com/google/certificate-transparency-go".
 
 ## Trillian Preview Personality
 
