@@ -30,17 +30,13 @@ import (
 
 	"github.com/google/trillian"
 	"google.golang.org/grpc/status"
-	// "github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
-	// "github.com/google/trillian/crypto/keyspb"
-	// "github.com/google/trillian/crypto/keys"
 	trillianCrypto "github.com/google/trillian/crypto"
 	"github.com/google/trillian/crypto/keys/pem"
 
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
-	// "github.com/google/certificate-transparency-go/trillian/preview/testonly"
 
 	cttestonly "github.com/google/certificate-transparency-go/trillian/ctfe/testonly"
 )

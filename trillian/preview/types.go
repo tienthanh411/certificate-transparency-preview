@@ -19,7 +19,6 @@ package preview
 
 import (
 	ct "github.com/google/certificate-transparency-go"
-
 	"github.com/google/certificate-transparency-go/tls"
 )
 
