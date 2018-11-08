@@ -43,37 +43,52 @@ const (
 // ComplaintType represents the complaint reason
 type ComplaintType tls.Enum // tls:"maxval:65535"
 
-// ComplaintTyoe constants
+// ComplaintType constants
 const (
 	UnknownImpersonationComplaintType ComplaintType = 0
 	NameImpersonationComplaintType    ComplaintType = 1
 	LogoImpersonationComplaintType    ComplaintType = 2
+	InvalidCertificateComplaintType   ComplaintType = 3
+	InvalidRevocationComplaintType    ComplaintType = 4
 )
 
 // Complaint represents a complained filed by a trusted CA
 type Complaint struct {
-	SerialNumber []byte              `json:"serial"`
-	Reason       ComplaintType       `json:"reason"`
-	Proof        [][]byte            `json:"proof"`
-	Signature    tls.DigitallySigned `json:"signature"`
+	// TODO: consider removing serial number
+	// SerialNumber []byte              `json:"serial"`
+	Reason     ComplaintType       `json:"reason"`
+	Proof      [][]byte            `json:"proof"`
+	Complainer [][]byte            `json:"chain"`
+	Signature  tls.DigitallySigned `json:"signature"`
 }
 
 // AddComplaintRequest represents the JSON request body sent to the
 // add-complaint POST method
 type AddComplaintRequest struct {
-	Chain     [][]byte `json:"chain"`
 	Complaint `json:"content"`
 }
 
-// Resolution indicates a complaint is not true
+type ResolutionType tls.Enum // tls:"maxval:65535"
+
+// ResolutionType constants
+const (
+	UnknownResolutionType      ResolutionType = 0
+	WithdrawlResolutionType    ResolutionType = 1
+	AcceptanceResolutionType   ResolutionType = 2
+	AdjudicationResolutionType ResolutionType = 3
+)
+
+// Resolution indicates a final status for a complaint.
 type Resolution struct {
 	ComplaintID []byte              `json:"complaintId"`
+	Reason      ResolutionType      `json:"reason"`
+	Description string              `json:"resolutionDescription"` // Optional
+	Resolver    [][]byte            `json:"chain"`
 	Signature   tls.DigitallySigned `json:"signature"`
 }
 
 // AddResolutionRequest represents the JSON request body sent to the
 // add-resolution POST method
 type AddResolutionRequest struct {
-	Chain      [][]byte `json:"chain"`
 	Resolution `json:"content"`
 }

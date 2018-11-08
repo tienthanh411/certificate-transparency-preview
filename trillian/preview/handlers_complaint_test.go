@@ -29,10 +29,10 @@ import (
 	"testing"
 
 	"github.com/google/trillian"
-	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/codes"
 	trillianCrypto "github.com/google/trillian/crypto"
 	"github.com/google/trillian/crypto/keys/pem"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/tls"
@@ -48,6 +48,16 @@ func TestAddResolution(t *testing.T) {
 	intCertPEM := readFile(t, "../testdata/int-ca.cert")
 	rootCertPEM := readFile(t, "../testdata/fake-ca.cert")
 
+	// Identifies the signer, but otherwise is passive payload.
+	trustedCAChainPEM := []string{
+		intCertPEM,
+		rootCertPEM,
+	}
+	untrustedCAChainPEM := []string{
+		cttestonly.FakeIntermediateCertPEM,
+		cttestonly.FakeCACertPEM,
+	}
+
 	// private keys
 	trustedCAPrivKeyPEM := readFile(t, "../testdata/int-ca.privkey.pem")
 	trustedCAKeyPassword := "babelfish"
@@ -58,10 +68,10 @@ func TestAddResolution(t *testing.T) {
 	leafPrivKeyPEM := readFile(t, "../testdata/leaf.privkey.pem")
 	leafKeyPassword := "liff"
 
-	validResolution := createResolution(t, make([]byte, 32), trustedCAPrivKeyPEM, trustedCAKeyPassword)
-	invalidComplaintIDResolution := createResolution(t, []byte{1}, trustedCAPrivKeyPEM, trustedCAKeyPassword)
-	untrustedResolution := createResolution(t, make([]byte, 32), untrustedCAPrivKeyPEM, untrustedCAKeyPassword)
-	signedByLeafResolution := createResolution(t, make([]byte, 32), leafPrivKeyPEM, leafKeyPassword)
+	validResolution := createResolution(t, make([]byte, 32), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
+	invalidComplaintIDResolution := createResolution(t, []byte{1}, trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
+	untrustedResolution := createResolution(t, make([]byte, 32), untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM)
+	signedByLeafResolution := createResolution(t, make([]byte, 32), leafPrivKeyPEM, leafKeyPassword, trustedCAChainPEM)
 	invalidSignatureResolution := Resolution{
 		ComplaintID: make([]byte, 32),
 		Signature: tls.DigitallySigned{
@@ -86,46 +96,46 @@ func TestAddResolution(t *testing.T) {
 		wantQuotaUsers []string
 	}{
 		{
-			descr:     "success",
-			chain:     []string{intCertPEM, rootCertPEM},
+			descr:      "success",
+			chain:      []string{intCertPEM, rootCertPEM},
 			resolution: validResolution,
-			toSign:    true,
-			want:      http.StatusOK,
+			toSign:     true,
+			want:       http.StatusOK,
 		},
 		{
-			descr:     "success without root",
-			chain:     []string{intCertPEM},
+			descr:      "success without root",
+			chain:      []string{intCertPEM},
 			resolution: validResolution,
-			toSign:    true,
-			want:      http.StatusOK,
+			toSign:     true,
+			want:       http.StatusOK,
 		},
 		{
-			descr:     "invalid complaint ID",
-			chain:     []string{intCertPEM, rootCertPEM},
+			descr:      "invalid complaint ID",
+			chain:      []string{intCertPEM, rootCertPEM},
 			resolution: invalidComplaintIDResolution,
-			toSign:    false,
-			want:      http.StatusBadRequest,
+			toSign:     false,
+			want:       http.StatusBadRequest,
 		},
 		{
-			descr:     "signed by untrusted CA",
-			chain:     []string{intCertPEM, rootCertPEM},
+			descr:      "signed by untrusted CA",
+			chain:      []string{intCertPEM, rootCertPEM},
 			resolution: untrustedResolution,
-			toSign:    false,
-			want:      http.StatusBadRequest,
+			toSign:     false,
+			want:       http.StatusBadRequest,
 		},
 		{
-			descr:     "signed by leaf",
-			chain:     []string{leafCertPEM, intCertPEM, rootCertPEM},
+			descr:      "signed by leaf",
+			chain:      []string{leafCertPEM, intCertPEM, rootCertPEM},
 			resolution: signedByLeafResolution,
-			toSign:    false,
-			want:      http.StatusBadRequest,
+			toSign:     false,
+			want:       http.StatusBadRequest,
 		},
 		{
-			descr:     "invalid signature",
-			chain:     []string{intCertPEM, rootCertPEM},
+			descr:      "invalid signature",
+			chain:      []string{intCertPEM, rootCertPEM},
 			resolution: invalidSignatureResolution,
-			toSign:    false,
-			want:      http.StatusBadRequest,
+			toSign:     false,
+			want:       http.StatusBadRequest,
 		},
 	}
 
@@ -219,6 +229,16 @@ func TestAddComplaint(t *testing.T) {
 		cttestonly.FakeCACertPEM,
 	}
 
+	// Identifies the signer, but otherwise is passive payload.
+	trustedCAChainPEM := []string{
+		intCertPEM,
+		rootCertPEM,
+	}
+	untrustedCAChainPEM := []string{
+		cttestonly.FakeIntermediateCertPEM,
+		cttestonly.FakeCACertPEM,
+	}
+
 	// private keys
 	trustedCAPrivKeyPEM := readFile(t, "../testdata/int-ca.privkey.pem")
 	trustedCAKeyPassword := "babelfish"
@@ -230,17 +250,17 @@ func TestAddComplaint(t *testing.T) {
 	leafKeyPassword := "liff"
 
 	validComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword)
+		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
 	unknownReasonComplaint := createComplaint(t, UnknownImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword)
+		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
 	untrustedComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), untrustedCAPrivKeyPEM, untrustedCAKeyPassword)
+		big.NewInt(12345), untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM)
 	signedByLeafComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), leafPrivKeyPEM, leafKeyPassword)
+		big.NewInt(12345), leafPrivKeyPEM, leafKeyPassword, validProofChainPEM)
 	invalidSignatureComplaint := Complaint{
-		Reason:       validComplaint.Reason,
-		SerialNumber: validComplaint.SerialNumber,
-		Proof:        validComplaint.Proof,
+		Reason: validComplaint.Reason,
+		// SerialNumber: validComplaint.SerialNumber,
+		Proof: validComplaint.Proof,
 		Signature: tls.DigitallySigned{
 			Algorithm: tls.SignatureAndHashAlgorithm{
 				Hash:      tls.SHA256,
@@ -250,7 +270,7 @@ func TestAddComplaint(t *testing.T) {
 		},
 	}
 	untrustedProofComplaint := createComplaint(t, NameImpersonationComplaintType, invalidProofChainPEM,
-		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword)
+		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, untrustedCAChainPEM)
 
 	var tests = []struct {
 		descr           string
@@ -388,7 +408,8 @@ func TestAddComplaint(t *testing.T) {
 }
 
 func createComplaint(t *testing.T, reason ComplaintType, proofChainPEM []string,
-	serial *big.Int, signerPrivKeyPEM string, keyPassword string) Complaint {
+	serial *big.Int, signerPrivKeyPEM string, keyPassword string,
+	complainerChainPEM []string) Complaint {
 	var err error
 
 	proofChainBytes := make([][]byte, len(proofChainPEM))
@@ -397,11 +418,18 @@ func createComplaint(t *testing.T, reason ComplaintType, proofChainPEM []string,
 		proofChainBytes[i] = rawCert.Raw
 	}
 
+	complainerChainBytes := make([][]byte, len(complainerChainPEM))
+	complainerPool := loadCertsIntoPoolOrDie(t, complainerChainPEM)
+	for i, rawCert := range complainerPool.RawCertificates() {
+		complainerChainBytes[i] = rawCert.Raw
+	}
+
 	// sign the complaint
 	complaint := Complaint{
-		Reason:       reason,
-		SerialNumber: serial.Bytes(),
-		Proof:        proofChainBytes,
+		Reason: reason,
+		// SerialNumber: serial.Bytes(),
+		Proof:      proofChainBytes,
+		Complainer: complainerChainBytes,
 	}
 	tbsBytes, err := json.Marshal(complaint)
 	if err != nil {
@@ -431,9 +459,18 @@ func createComplaint(t *testing.T, reason ComplaintType, proofChainPEM []string,
 }
 
 func createResolution(t *testing.T, complaintID []byte,
-		signerPrivKeyPEM string, keyPassword string) Resolution {
+	signerPrivKeyPEM string, keyPassword string,
+	resolverChainPEM []string) Resolution {
+
+	resolverChainBytes := make([][]byte, len(resolverChainPEM))
+	resolverPool := loadCertsIntoPoolOrDie(t, resolverChainPEM)
+	for i, rawCert := range resolverPool.RawCertificates() {
+		resolverChainBytes[i] = rawCert.Raw
+	}
+
 	resolution := Resolution{
 		ComplaintID: complaintID,
+		Resolver:    resolverChainBytes,
 	}
 	tbsBytes, err := json.Marshal(resolution)
 	if err != nil {
@@ -502,7 +539,7 @@ func createJSONAddComplaintRequest(t *testing.T, p PEMCertPool, complaint Compla
 	t.Helper()
 	var req AddComplaintRequest
 	for _, rawCert := range p.RawCertificates() {
-		req.Chain = append(req.Chain, rawCert.Raw)
+		req.Complainer = append(req.Complainer, rawCert.Raw)
 	}
 	req.Complaint = complaint
 
@@ -523,7 +560,7 @@ func createJSONAddResolutionRequest(t *testing.T, p PEMCertPool, resolution Reso
 	t.Helper()
 	var req AddResolutionRequest
 	for _, rawCert := range p.RawCertificates() {
-		req.Chain = append(req.Chain, rawCert.Raw)
+		req.Resolver = append(req.Resolver, rawCert.Raw)
 	}
 	req.Resolution = resolution
 

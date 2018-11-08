@@ -26,10 +26,10 @@ import (
 	"strconv"
 
 	"github.com/golang/glog"
+	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/trillian"
-	ct "github.com/google/certificate-transparency-go"
 )
 
 func addComplaint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
@@ -231,7 +231,7 @@ func buildLogLeafForJSONMerkleTreeLeaf(li *logInfo,
 func verifyAddComplaint(li *logInfo, req AddComplaintRequest) ([]*x509.Certificate, error) {
 	var err error
 	// The chain that signed the complaint must origin from a trusted root CA
-	chain, err := ValidateChain(req.Chain, li.validationOpts)
+	chain, err := ValidateChain(req.Complaint.Complainer, li.validationOpts)
 	if err != nil {
 		return nil, fmt.Errorf("complaint chain failed to verify: %s", err)
 	}
@@ -266,7 +266,7 @@ func verifyAddComplaint(li *logInfo, req AddComplaintRequest) ([]*x509.Certifica
 func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certificate, error) {
 	var err error
 	// The chain that signed the complaint must origin from a trusted root CA
-	chain, err := ValidateChain(req.Chain, li.validationOpts)
+	chain, err := ValidateChain(req.Resolution.Resolver, li.validationOpts)
 	if err != nil {
 		return nil, fmt.Errorf("resolution chain failed to verify: %s", err)
 	}
@@ -291,7 +291,10 @@ func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certifi
 
 func verifyResolutionSignature(pubKey crypto.PublicKey, r Resolution) error {
 	tbsResolution := Resolution{
-		ComplaintID:       r.ComplaintID,
+		ComplaintID: r.ComplaintID,
+		Reason:      r.Reason,
+		Description: r.Description,
+		Resolver:    r.Resolver,
 	}
 	tbsBytes, err := json.Marshal(tbsResolution)
 	if err != nil {
@@ -306,9 +309,10 @@ func verifyResolutionSignature(pubKey crypto.PublicKey, r Resolution) error {
 
 func verifyComplaintSignature(pubKey crypto.PublicKey, c Complaint) error {
 	tbsComplaint := Complaint{
-		Reason:       c.Reason,
-		SerialNumber: c.SerialNumber,
-		Proof:        c.Proof,
+		// SerialNumber: c.SerialNumber,
+		Reason:     c.Reason,
+		Proof:      c.Proof,
+		Complainer: c.Complainer,
 	}
 	tbsBytes, err := json.Marshal(tbsComplaint)
 	if err != nil {
@@ -337,16 +341,16 @@ func parseBodyAsAddComplaintRequest(li *logInfo, r *http.Request) (AddComplaintR
 	}
 
 	// The cert chain is not allowed to be empty. We'll defer other validation for later
-	if len(req.Chain) == 0 {
+	if len(req.Complaint.Complainer) == 0 {
 		glog.V(1).Infof("%s: Request chain is empty: %s", li.LogPrefix, body)
 		return AddComplaintRequest{}, errors.New("cert chain was empty")
 	}
 
 	// Do some simple checks on the complaint
-	if len(req.Complaint.SerialNumber) == 0 {
-		glog.V(1).Infof("%s: Serial number is empty: %s", li.LogPrefix, body)
-		return AddComplaintRequest{}, errors.New("serial number was empty")
-	}
+	//if len(req.Complaint.SerialNumber) == 0 {
+	//	glog.V(1).Infof("%s: Serial number is empty: %s", li.LogPrefix, body)
+	//	return AddComplaintRequest{}, errors.New("serial number was empty")
+	//}
 	if len(req.Complaint.Proof) == 0 {
 		glog.V(1).Infof("%s: Complaint proof is empty: %s", li.LogPrefix, body)
 		return AddComplaintRequest{}, errors.New("complaint proof was empty")
@@ -371,7 +375,7 @@ func parseBodyAsAddResolutionRequest(li *logInfo, r *http.Request) (AddResolutio
 	}
 
 	// The cert chain is not allowed to be empty. We'll defer other validation for later
-	if len(req.Chain) == 0 {
+	if len(req.Resolution.Resolver) == 0 {
 		glog.V(1).Infof("%s: Request chain is empty: %s", li.LogPrefix, body)
 		return AddResolutionRequest{}, errors.New("cert chain was empty")
 	}
