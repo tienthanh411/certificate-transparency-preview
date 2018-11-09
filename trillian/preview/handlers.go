@@ -86,9 +86,10 @@ type EntrypointName string
 // Constants for entrypoint names, as exposed in statistics/logging.
 const (
 	AddChainName          = EntrypointName("AddChain")
-	AddComplaintName		  = EntrypointName("AddComplaint")
+	AddComplaintName      = EntrypointName("AddComplaint")
 	AddPreChainName       = EntrypointName("AddPreChain")
 	AddResolutionName     = EntrypointName("AddResolution")
+	AddCheckpointName     = EntrypointName("AddCheckpoint")
 	GetSTHName            = EntrypointName("GetSTH")
 	GetSTHConsistencyName = EntrypointName("GetSTHConsistency")
 	GetProofByHashName    = EntrypointName("GetProofByHash")
@@ -123,7 +124,8 @@ func setupMetrics(mf monitoring.MetricFactory) {
 
 // Entrypoints is a list of entrypoint names as exposed in statistics/logging.
 var Entrypoints = []EntrypointName{AddChainName, AddComplaintName, AddPreChainName, AddResolutionName,
-	GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName, GetRootsName, GetEntryAndProofName}
+	AddCheckpointName, GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName,
+	GetRootsName, GetEntryAndProofName}
 
 // PathHandlers maps from a path to the relevant AppHandler instance.
 type PathHandlers map[string]AppHandler
@@ -276,8 +278,9 @@ func (li *logInfo) Handlers(prefix string) PathHandlers {
 
 	// Bind the logInfo instance to give an AppHandler instance for each endpoint.
 	ph := PathHandlers{
-		prefix + AddComplaintPath:			 	 AppHandler{Info: li, Handler: addComplaint, Name: AddComplaintName, Method: http.MethodPost},
-		prefix + AddResolutionPath:			 	 AppHandler{Info: li, Handler: addResolution, Name: AddResolutionName, Method: http.MethodPost},
+		prefix + AddComplaintPath:  AppHandler{Info: li, Handler: addComplaint, Name: AddComplaintName, Method: http.MethodPost},
+		prefix + AddResolutionPath: AppHandler{Info: li, Handler: addResolution, Name: AddResolutionName, Method: http.MethodPost},
+		prefix + AddCheckpointPath: AppHandler{Info: li, Handler: addCheckpoint, Name: AddCheckpointName, Method: http.MethodPost},
 
 		prefix + ct.AddChainPath:          AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
 		prefix + ct.AddPreChainPath:       AppHandler{Info: li, Handler: addPreChain, Name: AddPreChainName, Method: http.MethodPost},

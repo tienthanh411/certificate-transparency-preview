@@ -98,7 +98,7 @@ func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 	var err error
 	method := AddComplaintName
 
-	// Check the contents of the request and convert to slice of certificates.
+	// Check the contents of the request and convert to AddResolutionRequest.
 	addResolutionReq, err := parseBodyAsAddResolutionRequest(li, r)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to parse add-resolution body: %s", err)
@@ -143,6 +143,68 @@ func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 	// We could possibly fail to issue the SCT after this but it's v. unlikely.
 	li.RequestLog.IssueSCT(ctx, sctBytes)
 	// The response of AddResolutionRequest is similar to AddChainRequest
+	err = marshalAndWriteAddChainResponse(sct, li.signer, w)
+	if err != nil {
+		// reason is logged and http status is already set
+		return http.StatusInternalServerError, fmt.Errorf("failed to write response: %s", err)
+	}
+	glog.V(3).Infof("%s: %s <= SCT", li.LogPrefix, method)
+	if sct.Timestamp == timeMillis {
+		lastSCTTimestamp.Set(float64(sct.Timestamp), strconv.FormatInt(li.logID, 10))
+	}
+
+	return http.StatusOK, nil
+}
+
+func addCheckpoint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
+	var err error
+	method := AddCheckpointName
+
+	// Check the contents of the request and convert to AddCheckpointRequest.
+	addCheckpointReq, err := parseBodyAsAddCheckpointRequest(li, r)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to parse add-checkpoint body: %s", err)
+	}
+
+	chain, err := verifyAddCheckpoint(li, addCheckpointReq)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to verify add-checkpoint contents: %s", err)
+	}
+
+	// Get the current time in the form used throughout RFC6962, namely milliseconds since Unix
+	// epoch, and use this throughout.
+	timeMillis := uint64(li.TimeSource.Now().UnixNano() / millisPerNano)
+
+	// Build the MerkleTreeLeaf that gets sent to the backend, and make a trillian.LogLeaf for it.
+	merkleLeaf := ct.CreateJSONMerkleTreeLeaf(addCheckpointReq, timeMillis)
+	if merkleLeaf == nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf")
+	}
+
+	leaf, err := buildLogLeafForJSONMerkleTreeLeaf(li, *merkleLeaf, 0, addCheckpointReq)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to build LogLeaf: %s", err)
+	}
+
+	// Send the Merkle tree leaf on to the Log server.
+	queuedLeaf, err := queueLogLeaf(li, leaf, chain, r, method, ctx)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	// Always use the returned leaf as the basis for an SCT.
+	sct, err := generateSCT(li, queuedLeaf)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	sctBytes, err := tls.Marshal(*sct)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to marshall SCT: %s", err)
+	}
+
+	// We could possibly fail to issue the SCT after this but it's v. unlikely.
+	li.RequestLog.IssueSCT(ctx, sctBytes)
+	// The response of AddCheckpointRequest is similar to AddChainRequest
 	err = marshalAndWriteAddChainResponse(sct, li.signer, w)
 	if err != nil {
 		// reason is logged and http status is already set
@@ -236,6 +298,7 @@ func verifyAddComplaint(li *logInfo, req AddComplaintRequest) ([]*x509.Certifica
 		return nil, fmt.Errorf("complaint chain failed to verify: %s", err)
 	}
 
+	// TODO(weihaw): change to allow non-CA monitors.
 	// The end of the chain must be a CA certificate
 	if !chain[0].IsCA {
 		return nil, fmt.Errorf("complaint chain not ended with a CA certificate")
@@ -271,6 +334,7 @@ func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certifi
 		return nil, fmt.Errorf("resolution chain failed to verify: %s", err)
 	}
 
+	// TODO(weihaw): change to allow non-CA monitors.
 	// The end of the chain must be a CA certificate
 	if !chain[0].IsCA {
 		return nil, fmt.Errorf("complaint chain not ended with a CA certificate")
@@ -286,6 +350,30 @@ func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certifi
 	if len(req.Resolution.ComplaintID) != 32 {
 		return nil, fmt.Errorf("complaintID is supposed to be 32-byte long, got %d bytes", len(req.Resolution.ComplaintID))
 	}
+	return chain, nil
+}
+
+// verifyAddCheckpoint is used by add-resolution. It checks whether the given
+// AddCheckpointRequest is valid and returns the parsed certificate chain in the request.
+func verifyAddCheckpoint(li *logInfo, req AddCheckpointRequest) ([]*x509.Certificate, error) {
+	var err error
+	// The chain that signed the complaint must origin from a trusted root CA
+	chain, err := ValidateChain(req.Checkpoint.Checkpointer, li.validationOpts)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint chain failed to verify: %s", err)
+	}
+
+	// TODO(weihaw): change to allow non-CA monitors.
+	// The end of the chain must be a CA certificate
+	if !chain[0].IsCA {
+		return nil, fmt.Errorf("checkpoint chain not ended with a CA certificate")
+	}
+
+	// The signature must be valid
+	if err = verifyCheckpointSignature(chain[0].PublicKey, req.Checkpoint); err != nil {
+		return nil, err
+	}
+
 	return chain, nil
 }
 
@@ -319,6 +407,24 @@ func verifyComplaintSignature(pubKey crypto.PublicKey, c Complaint) error {
 		return fmt.Errorf("unable to verify signature: %v", err)
 	}
 	err = tls.VerifySignature(pubKey, tbsBytes, c.Signature)
+	if err != nil {
+		return fmt.Errorf("invalid signature: %v", err)
+	}
+	return nil
+}
+
+func verifyCheckpointSignature(pubKey crypto.PublicKey, r Checkpoint) error {
+	tbsCheckpoint := Checkpoint{
+		Timestamp:    r.Timestamp,
+		StartIndex:   r.StartIndex,
+		EndIndex:     r.EndIndex,
+		Checkpointer: r.Checkpointer,
+	}
+	tbsBytes, err := json.Marshal(tbsCheckpoint)
+	if err != nil {
+		return fmt.Errorf("unable to verify signature: %v", err)
+	}
+	err = tls.VerifySignature(pubKey, tbsBytes, r.Signature)
 	if err != nil {
 		return fmt.Errorf("invalid signature: %v", err)
 	}
@@ -383,6 +489,30 @@ func parseBodyAsAddResolutionRequest(li *logInfo, r *http.Request) (AddResolutio
 	if len(req.Resolution.ComplaintID) == 0 {
 		glog.V(1).Infof("%s: ComplaintID is empty: %s", li.LogPrefix, body)
 		return AddResolutionRequest{}, errors.New("complaint id was empty")
+	}
+
+	return req, nil
+}
+
+// parseBodyAsAddCheckpointRequest parses the given HTTP request's body as
+// a AddCheckpointRequest JSON object.
+func parseBodyAsAddCheckpointRequest(li *logInfo, r *http.Request) (AddCheckpointRequest, error) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.V(1).Infof("%s: Failed to read request body: %v", li.LogPrefix, err)
+		return AddCheckpointRequest{}, err
+	}
+
+	var req AddCheckpointRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		glog.V(1).Infof("%s: Failed to parse request body: %v", li.LogPrefix, err)
+		return AddCheckpointRequest{}, err
+	}
+
+	// The cert chain is not allowed to be empty. We'll defer other validation for later
+	if len(req.Checkpoint.Checkpointer) == 0 {
+		glog.V(1).Infof("%s: Request chain is empty: %s", li.LogPrefix, body)
+		return AddCheckpointRequest{}, errors.New("cert chain was empty")
 	}
 
 	return req, nil
