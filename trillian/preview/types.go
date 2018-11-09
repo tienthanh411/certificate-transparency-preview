@@ -26,18 +26,21 @@ const (
 	AddPreviewChainStr ct.APIEndpoint = "add-preview-chain"
 	AddComplaintStr    ct.APIEndpoint = "add-complaint"
 	AddResolutionStr   ct.APIEndpoint = "add-resolution"
+	AddCheckpointStr   ct.APIEndpoint = "add-checkpoint"
 )
 
 const (
 	AddPreviewChainPath = "/ct/v1/add-preview-chain"
 	AddComplaintPath    = "/ct/v1/add-complaint"
 	AddResolutionPath   = "/ct/v1/add-resolution"
+	AddCheckpointPath   = "/ct/v1/add-checkpoint"
 )
 
 // LogEntryType constants. Extends the types defined in certificate-transparency-go/types.go
 const (
 	ComplaintLogEntryType  ct.LogEntryType = 2
 	ResolutionLogEntryType ct.LogEntryType = 3
+	CheckpointLogEntryType ct.LogEntryType = 4
 )
 
 // ComplaintType represents the complaint reason
@@ -91,4 +94,19 @@ type Resolution struct {
 // add-resolution POST method
 type AddResolutionRequest struct {
 	Resolution `json:"content"`
+}
+
+// Checkpoint indicates a final status for a complaint.
+type Checkpoint struct {
+	Timestamp    uint64
+	StartIndex   int64
+	EndIndex     int64
+	Checkpointer [][]byte            `json:"chain"`
+	Signature    tls.DigitallySigned `json:"signature"`
+}
+
+// AddCheckpointRequest represents the JSON request body sent to the
+// add-resolution POST method
+type AddCheckpointRequest struct {
+	Checkpoint `json:"content"`
 }
