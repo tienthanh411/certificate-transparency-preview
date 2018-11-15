@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/sha256"
-	"encoding/asn1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +55,10 @@ func addComplaint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *ht
 	merkleLeaf := ct.CreateJSONMerkleTreeLeaf(addComplaintReq, timeMillis)
 	if merkleLeaf == nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf")
+	}
+	extStatus, extError := addPreviewExtension(merkleLeaf, ComplaintLogEntryType)
+	if extStatus != http.StatusOK {
+		return extStatus, extError
 	}
 
 	leaf, err := buildLogLeafForJSONMerkleTreeLeaf(li, *merkleLeaf, 0, addComplaintReq)
@@ -164,25 +167,6 @@ func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 	return http.StatusOK, nil
 }
 
-func addPreviewExtension(merkleLeaf *ct.MerkleTreeLeaf, logEntryType ct.LogEntryType) (int, error) {
-	value, err := asn1.Marshal(ct.PreviewOperationExtensionValue{
-		EntryType: int32(logEntryType),
-	})
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("failed to marshall PreviewOperationExtensionValue: %s", err)
-	}
-	ext, err := asn1.Marshal(ct.CTExtension{
-		Id:       x509.OIDPreviewOperationExtension,
-		Critical: true,
-		Value:    value,
-	})
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("failed to marshall CTExtension: %s", err)
-	}
-	merkleLeaf.TimestampedEntry.Extensions = ext
-	return http.StatusOK, nil
-}
-
 func addCheckpoint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
 	var err error
 	method := AddCheckpointName
@@ -206,6 +190,10 @@ func addCheckpoint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 	merkleLeaf := ct.CreateJSONMerkleTreeLeaf(addCheckpointReq, timeMillis)
 	if merkleLeaf == nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf")
+	}
+	extStatus, extError := addPreviewExtension(merkleLeaf, CheckpointLogEntryType)
+	if extStatus != http.StatusOK {
+		return extStatus, extError
 	}
 
 	leaf, err := buildLogLeafForJSONMerkleTreeLeaf(li, *merkleLeaf, 0, addCheckpointReq)

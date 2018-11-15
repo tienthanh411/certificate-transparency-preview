@@ -429,6 +429,11 @@ func TestAddChain(t *testing.T) {
 				t.Errorf("Unexpected error signing SCT: %v", err)
 				continue
 			}
+			extStatus, _ := addPreviewExtension(merkleLeaf, ct.X509LogEntryType)
+			if extStatus != http.StatusOK {
+				t.Errorf("Failed to create preview extension")
+				continue
+			}
 			leafChain := pool.RawCertificates()
 			if !leafChain[len(leafChain)-1].Equal(root) {
 				// The submitted chain may not include a root, but the generated LogLeaf will
@@ -552,6 +557,11 @@ func TestAddPrechain(t *testing.T) {
 			merkleLeaf, err := ct.MerkleTreeLeafFromChain([]*x509.Certificate{pool.RawCertificates()[0], root}, ct.PrecertLogEntryType, fakeTimeMillis)
 			if err != nil {
 				t.Errorf("Unexpected error signing SCT: %v", err)
+				continue
+			}
+			extStatus, _ := addPreviewExtension(merkleLeaf, ct.PrecertLogEntryType)
+			if extStatus != http.StatusOK {
+				t.Errorf("Failed to create preview extension")
 				continue
 			}
 			leafChain := pool.RawCertificates()

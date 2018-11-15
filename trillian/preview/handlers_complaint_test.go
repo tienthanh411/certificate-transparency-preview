@@ -382,6 +382,11 @@ func TestAddComplaint(t *testing.T) {
 				t.Errorf("Failed to create Merkle tree leaf")
 				continue
 			}
+			extStatus, _ := addPreviewExtension(merkleLeaf, ComplaintLogEntryType)
+			if extStatus != http.StatusOK {
+				t.Errorf("Failed to create preview extension")
+				continue
+			}
 			leafChain := pool.RawCertificates()
 			root := info.roots.RawCertificates()[0]
 			if !leafChain[len(leafChain)-1].Equal(root) {
@@ -544,6 +549,11 @@ func TestAddCheckpoint(t *testing.T) {
 			merkleLeaf := ct.CreateJSONMerkleTreeLeaf(addCheckpointReq, fakeTimeMillis)
 			if merkleLeaf == nil {
 				t.Errorf("Failed to create Merkle tree leaf")
+				continue
+			}
+			extStatus, _ := addPreviewExtension(merkleLeaf, CheckpointLogEntryType)
+			if extStatus != http.StatusOK {
+				t.Errorf("Failed to create preview extension")
 				continue
 			}
 			leafChain := pool.RawCertificates()

@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/sha256"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -384,6 +385,10 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 	merkleLeaf, err := ct.MerkleTreeLeafFromChain(chain, etype, timeMillis)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf: %s", err)
+	}
+	extStatus, extError := addPreviewExtension(merkleLeaf, etype)
+	if extStatus != http.StatusOK {
+		return extStatus, extError
 	}
 	leaf, err := buildLogLeafForAddChain(li, *merkleLeaf, chain, isPrecert)
 	if err != nil {
@@ -1109,4 +1114,23 @@ func (li *logInfo) toHTTPStatus(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+func addPreviewExtension(merkleLeaf *ct.MerkleTreeLeaf, logEntryType ct.LogEntryType) (int, error) {
+	value, err := asn1.Marshal(ct.PreviewOperationExtensionValue{
+		EntryType: int32(logEntryType),
+	})
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to marshall PreviewOperationExtensionValue: %s", err)
+	}
+	ext, err := asn1.Marshal(ct.CTExtension{
+		Id:       x509.OIDPreviewOperationExtension,
+		Critical: true,
+		Value:    value,
+	})
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to marshall CTExtension: %s", err)
+	}
+	merkleLeaf.TimestampedEntry.Extensions = ext
+	return http.StatusOK, nil
 }
