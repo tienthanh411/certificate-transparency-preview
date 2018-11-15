@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
+	"github.com/google/certificate-transparency-go/x509/pkix"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -36,8 +37,9 @@ type LogEntryType tls.Enum // tls:"maxval:65535"
 
 // LogEntryType constants from section 3.1.
 const (
-	X509LogEntryType    LogEntryType = 0
-	PrecertLogEntryType LogEntryType = 1
+	X509LogEntryType    LogEntryType = 0      // Issuance
+	PrecertLogEntryType LogEntryType = 1      // Issuance
+	PreviewLogEntryType LogEntryType = 2      // Preview Precert
 	XJSONLogEntryType   LogEntryType = 0x8000 // Experimental.  Don't rely on this!
 )
 
@@ -52,6 +54,10 @@ func (e LogEntryType) String() string {
 	default:
 		return fmt.Sprintf("UnknownEntryType(%d)", e)
 	}
+}
+
+type PreviewOperationExtensionValue struct {
+	EntryType int32 `tls:"minval:0,maxval:65535",asn1:"optional,tag:2"`
 }
 
 // RFC6962 section 2.1 requires a prefix byte on hash inputs for second preimage resistance.
@@ -133,10 +139,10 @@ type PreCert struct {
 	TBSCertificate []byte `tls:"minlen:1,maxlen:16777215"` // DER-encoded TBSCertificate
 }
 
-// CTExtensions is a representation of the raw bytes of any CtExtension
-// structure (see section 3.2).
+// CTExtensions is a representation of the raw bytes of any CTExtension which itself
+// a pkix.Extension.
 // nolint: golint
-type CTExtensions []byte // tls:"minlen:0,maxlen:65535"`
+type CTExtension pkix.Extension
 
 // MerkleTreeNode represents an internal node in the CT tree.
 type MerkleTreeNode []byte
@@ -296,7 +302,7 @@ type SignedCertificateTimestamp struct {
 	SCTVersion Version `tls:"maxval:255"`
 	LogID      LogID
 	Timestamp  uint64
-	Extensions CTExtensions    `tls:"minlen:0,maxlen:65535"`
+	Extensions []byte          `tls:"minlen:0,maxlen:1677215"`
 	Signature  DigitallySigned // Signature over TLS-encoded CertificateTimestamp
 }
 
@@ -310,7 +316,7 @@ type CertificateTimestamp struct {
 	X509Entry     *ASN1Cert      `tls:"selector:EntryType,val:0"`
 	PrecertEntry  *PreCert       `tls:"selector:EntryType,val:1"`
 	JSONEntry     *JSONDataEntry `tls:"selector:EntryType,val:32768"`
-	Extensions    CTExtensions   `tls:"minlen:0,maxlen:65535"`
+	Extensions    []byte         `tls:"minlen:0,maxlen:16777215"`
 }
 
 func (s SignedCertificateTimestamp) String() string {
@@ -328,7 +334,7 @@ type TimestampedEntry struct {
 	X509Entry    *ASN1Cert      `tls:"selector:EntryType,val:0"`
 	PrecertEntry *PreCert       `tls:"selector:EntryType,val:1"`
 	JSONEntry    *JSONDataEntry `tls:"selector:EntryType,val:32768"`
-	Extensions   CTExtensions   `tls:"minlen:0,maxlen:65535"`
+	Extensions   []byte         `tls:"minlen:0,maxlen:1677215"`
 }
 
 // MerkleTreeLeaf represents the deserialized structure of the hash input for the
@@ -422,7 +428,7 @@ type AddChainResponse struct {
 	SCTVersion Version `json:"sct_version"` // SCT structure version
 	ID         []byte  `json:"id"`          // Log ID
 	Timestamp  uint64  `json:"timestamp"`   // Timestamp of issuance
-	Extensions string  `json:"extensions"`  // Holder for any CT extensions
+	Extensions []byte  `json:"extensions"`  // Holder for any CT extensions
 	Signature  []byte  `json:"signature"`   // Log signature for this SCT
 }
 

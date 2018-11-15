@@ -2848,7 +2848,7 @@ func ParseCertificateRequest(asn1Data []byte) (*CertificateRequest, error) {
 
 func parseCertificateRequest(in *certificateRequest) (*CertificateRequest, error) {
 	out := &CertificateRequest{
-		Raw: in.Raw,
+		Raw:                      in.Raw,
 		RawTBSCertificateRequest: in.TBSCSR.Raw,
 		RawSubjectPublicKeyInfo:  in.TBSCSR.PublicKey.Raw,
 		RawSubject:               in.TBSCSR.Subject.FullBytes,
@@ -2898,3 +2898,9 @@ func parseCertificateRequest(in *certificateRequest) (*CertificateRequest, error
 func (c *CertificateRequest) CheckSignature() error {
 	return checkSignature(c.SignatureAlgorithm, c.RawTBSCertificateRequest, c.Signature, c.PublicKey)
 }
+
+// OID values for new features.
+var (
+	// See preview/types.go PreviewOperationExtensionValue
+	OIDPreviewOperationExtension = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 6}
+)

@@ -54,7 +54,7 @@ func TestBuildV1MerkleTreeLeafForCert(t *testing.T) {
 		SCTVersion: 0,
 		LogID:      ct.LogID{KeyID: demoLogID},
 		Timestamp:  fixedTimeMillis,
-		Extensions: ct.CTExtensions{},
+		Extensions: []byte{},
 		Signature: ct.DigitallySigned{
 			Algorithm: tls.SignatureAndHashAlgorithm{
 				Hash:      tls.SHA256,
@@ -112,7 +112,7 @@ func TestSignV1SCTForPrecertificate(t *testing.T) {
 		SCTVersion: 0,
 		LogID:      ct.LogID{KeyID: demoLogID},
 		Timestamp:  fixedTimeMillis,
-		Extensions: ct.CTExtensions{},
+		Extensions: []byte{},
 		Signature: ct.DigitallySigned{
 			Algorithm: tls.SignatureAndHashAlgorithm{
 				Hash:      tls.SHA256,

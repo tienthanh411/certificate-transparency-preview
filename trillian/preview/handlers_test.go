@@ -736,7 +736,7 @@ func runTestGetEntries(t *testing.T) {
 			Timestamp:  12345,
 			EntryType:  ct.X509LogEntryType,
 			X509Entry:  &ct.ASN1Cert{Data: []byte("certdatacertdata")},
-			Extensions: ct.CTExtensions{},
+			Extensions: []byte{},
 		},
 	}
 	merkleLeaf2 := ct.MerkleTreeLeaf{
@@ -746,7 +746,7 @@ func runTestGetEntries(t *testing.T) {
 			Timestamp:  67890,
 			EntryType:  ct.X509LogEntryType,
 			X509Entry:  &ct.ASN1Cert{Data: []byte("certdat2certdat2")},
-			Extensions: ct.CTExtensions{},
+			Extensions: []byte{},
 		},
 	}
 	merkleBytes1, err1 := tls.Marshal(merkleLeaf1)
@@ -1698,7 +1698,7 @@ func TestGetEntryAndProof(t *testing.T) {
 			Timestamp:  12345,
 			EntryType:  ct.X509LogEntryType,
 			X509Entry:  &ct.ASN1Cert{Data: []byte("certdatacertdata")},
-			Extensions: ct.CTExtensions{},
+			Extensions: []byte{},
 		},
 	}
 	leafBytes, err := tls.Marshal(merkleLeaf)

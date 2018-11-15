@@ -45,6 +45,7 @@ func TestAddResolution(t *testing.T) {
 	var err error
 	// valid proof chain that is originated from a trusted CA
 	leafCertPEM := readFile(t, "../testdata/leaf01.cert")
+	leaf2CertPEM := readFile(t, "../testdata/leaf02.cert")
 	intCertPEM := readFile(t, "../testdata/int-ca.cert")
 	rootCertPEM := readFile(t, "../testdata/fake-ca.cert")
 
@@ -57,6 +58,11 @@ func TestAddResolution(t *testing.T) {
 		cttestonly.FakeIntermediateCertPEM,
 		cttestonly.FakeCACertPEM,
 	}
+	targetChainPEM := []string{
+		leaf2CertPEM,
+		intCertPEM,
+		rootCertPEM,
+	}
 
 	// private keys
 	trustedCAPrivKeyPEM := readFile(t, "../testdata/int-ca.privkey.pem")
@@ -68,10 +74,14 @@ func TestAddResolution(t *testing.T) {
 	leafPrivKeyPEM := readFile(t, "../testdata/leaf.privkey.pem")
 	leafKeyPassword := "liff"
 
-	validResolution := createResolution(t, make([]byte, 32), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
-	invalidComplaintIDResolution := createResolution(t, []byte{1}, trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
-	untrustedResolution := createResolution(t, make([]byte, 32), untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM)
-	signedByLeafResolution := createResolution(t, make([]byte, 32), leafPrivKeyPEM, leafKeyPassword, trustedCAChainPEM)
+	validResolution := createResolution(t, make([]byte, 32), trustedCAPrivKeyPEM, trustedCAKeyPassword,
+		trustedCAChainPEM, targetChainPEM)
+	invalidComplaintIDResolution := createResolution(t, []byte{1}, trustedCAPrivKeyPEM, trustedCAKeyPassword,
+		trustedCAChainPEM, targetChainPEM)
+	untrustedResolution := createResolution(t, make([]byte, 32), untrustedCAPrivKeyPEM, untrustedCAKeyPassword,
+		untrustedCAChainPEM, targetChainPEM)
+	signedByLeafResolution := createResolution(t, make([]byte, 32), leafPrivKeyPEM, leafKeyPassword, trustedCAChainPEM,
+		targetChainPEM)
 	invalidSignatureResolution := Resolution{
 		ComplaintID: make([]byte, 32),
 		Signature: tls.DigitallySigned{
@@ -159,6 +169,11 @@ func TestAddResolution(t *testing.T) {
 				t.Errorf("Failed to create Merkle tree leaf")
 				continue
 			}
+			extStatus, _ := addPreviewExtension(merkleLeaf, ResolutionLogEntryType)
+			if extStatus != http.StatusOK {
+				t.Errorf("Failed to create preview extension")
+				continue
+			}
 			leafChain := pool.RawCertificates()
 			root := info.roots.RawCertificates()[0]
 			if !leafChain[len(leafChain)-1].Equal(root) {
@@ -215,6 +230,7 @@ func TestAddComplaint(t *testing.T) {
 	var err error
 	// valid proof chain that is originated from a trusted CA
 	leafCertPEM := readFile(t, "../testdata/leaf01.cert")
+	leaf2CertPEM := readFile(t, "../testdata/leaf02.cert")
 	intCertPEM := readFile(t, "../testdata/int-ca.cert")
 	rootCertPEM := readFile(t, "../testdata/fake-ca.cert")
 	validProofChainPEM := []string{
@@ -222,6 +238,12 @@ func TestAddComplaint(t *testing.T) {
 		intCertPEM,
 		rootCertPEM,
 	}
+	targetChainPEM := []string{
+		leaf2CertPEM,
+		intCertPEM,
+		rootCertPEM,
+	}
+
 	// invalid proof chain that is not originated from a trusted CA
 	invalidProofChainPEM := []string{
 		cttestonly.LeafSignedByFakeIntermediateCertPEM,
@@ -250,13 +272,17 @@ func TestAddComplaint(t *testing.T) {
 	leafKeyPassword := "liff"
 
 	validComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
+		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM,
+		targetChainPEM)
 	unknownReasonComplaint := createComplaint(t, UnknownImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
+		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM,
+		targetChainPEM)
 	untrustedComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM)
+		big.NewInt(12345), untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM,
+		targetChainPEM)
 	signedByLeafComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), leafPrivKeyPEM, leafKeyPassword, validProofChainPEM)
+		big.NewInt(12345), leafPrivKeyPEM, leafKeyPassword, validProofChainPEM,
+		targetChainPEM)
 	invalidSignatureComplaint := Complaint{
 		Reason: validComplaint.Reason,
 		// SerialNumber: validComplaint.SerialNumber,
@@ -270,7 +296,8 @@ func TestAddComplaint(t *testing.T) {
 		},
 	}
 	untrustedProofComplaint := createComplaint(t, NameImpersonationComplaintType, invalidProofChainPEM,
-		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, untrustedCAChainPEM)
+		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, untrustedCAChainPEM,
+		targetChainPEM)
 
 	var tests = []struct {
 		descr           string
@@ -573,25 +600,37 @@ func TestAddCheckpoint(t *testing.T) {
 
 func createComplaint(t *testing.T, reason ComplaintType, proofChainPEM []string,
 	serial *big.Int, signerPrivKeyPEM string, keyPassword string,
-	complainerChainPEM []string) Complaint {
+	complainerChainPEM []string, targetChainPEM []string) Complaint {
 	var err error
 
 	proofChainBytes := make([][]byte, len(proofChainPEM))
 	pool := loadCertsIntoPoolOrDie(t, proofChainPEM)
-	for i, rawCert := range pool.RawCertificates() {
-		proofChainBytes[i] = rawCert.Raw
+	for i, proofRawCert := range pool.RawCertificates() {
+		proofChainBytes[i] = proofRawCert.Raw
 	}
 
 	complainerChainBytes := make([][]byte, len(complainerChainPEM))
 	complainerPool := loadCertsIntoPoolOrDie(t, complainerChainPEM)
-	for i, rawCert := range complainerPool.RawCertificates() {
-		complainerChainBytes[i] = rawCert.Raw
+	for i, complainerRawCert := range complainerPool.RawCertificates() {
+		complainerChainBytes[i] = complainerRawCert.Raw
+	}
+
+	targetChainBytes := make([][]byte, len(targetChainPEM))
+	targetCert := make([]*x509.Certificate, len(targetChainPEM))
+	targetPool := loadCertsIntoPoolOrDie(t, targetChainPEM)
+	for i, targetRawCert := range targetPool.RawCertificates() {
+		targetChainBytes[i] = targetRawCert.Raw
+		targetCert[i], _ = x509.ParseCertificate(targetRawCert.Raw)
 	}
 
 	// sign the complaint
+	issuerHash := sha256.Sum256(targetCert[1].RawSubjectPublicKeyInfo)
 	complaint := Complaint{
 		Reason: reason,
-		// SerialNumber: serial.Bytes(),
+		Target: CrlSetID{
+			IssuerSpkiHash: issuerHash[:],
+			SerialNumber:   targetCert[0].SerialNumber,
+		},
 		Proof:      proofChainBytes,
 		Complainer: complainerChainBytes,
 	}
@@ -624,17 +663,31 @@ func createComplaint(t *testing.T, reason ComplaintType, proofChainPEM []string,
 
 func createResolution(t *testing.T, complaintID []byte,
 	signerPrivKeyPEM string, keyPassword string,
-	resolverChainPEM []string) Resolution {
+	resolverChainPEM []string, targetChainPEM []string) Resolution {
 
 	resolverChainBytes := make([][]byte, len(resolverChainPEM))
 	resolverPool := loadCertsIntoPoolOrDie(t, resolverChainPEM)
-	for i, rawCert := range resolverPool.RawCertificates() {
-		resolverChainBytes[i] = rawCert.Raw
+	for i, resolverRawCert := range resolverPool.RawCertificates() {
+		resolverChainBytes[i] = resolverRawCert.Raw
 	}
 
+	targetChainBytes := make([][]byte, len(targetChainPEM))
+	targetCert := make([]*x509.Certificate, len(targetChainPEM))
+	targetPool := loadCertsIntoPoolOrDie(t, targetChainPEM)
+	for i, targetRawCert := range targetPool.RawCertificates() {
+		targetChainBytes[i] = targetRawCert.Raw
+		targetCert[i], _ = x509.ParseCertificate(targetRawCert.Raw)
+	}
+
+	// sign the complaint
+	issuerHash := sha256.Sum256(targetCert[1].RawSubjectPublicKeyInfo)
 	resolution := Resolution{
 		ComplaintID: complaintID,
-		Resolver:    resolverChainBytes,
+		Target: CrlSetID{
+			IssuerSpkiHash: issuerHash[:],
+			SerialNumber:   targetCert[0].SerialNumber,
+		},
+		Resolver: resolverChainBytes,
 	}
 	tbsBytes, err := json.Marshal(resolution)
 	if err != nil {
@@ -670,8 +723,8 @@ func createCheckpoint(t *testing.T, timestamp uint64,
 
 	checkpointerChainBytes := make([][]byte, len(checkpointerChainPEM))
 	checkpointerPool := loadCertsIntoPoolOrDie(t, checkpointerChainPEM)
-	for i, rawCert := range checkpointerPool.RawCertificates() {
-		checkpointerChainBytes[i] = rawCert.Raw
+	for i, checkpointerRawCert := range checkpointerPool.RawCertificates() {
+		checkpointerChainBytes[i] = checkpointerRawCert.Raw
 	}
 
 	checkpoint := Checkpoint{

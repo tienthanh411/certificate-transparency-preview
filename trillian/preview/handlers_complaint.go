@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/sha256"
+	"encoding/asn1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,6 +119,13 @@ func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 	if merkleLeaf == nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to build MerkleTreeLeaf")
 	}
+	extStatus, extError := addPreviewExtension(merkleLeaf, ResolutionLogEntryType)
+	if extStatus != http.StatusOK {
+		return extStatus, extError
+	}
+
+	// TODO(weihaw): non hacky solution
+	// merkleLeaf.TimestampedEntry.EntryType = ResolutionLogEntryType
 
 	leaf, err := buildLogLeafForJSONMerkleTreeLeaf(li, *merkleLeaf, 0, addResolutionReq)
 	if err != nil {
@@ -153,6 +161,25 @@ func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 		lastSCTTimestamp.Set(float64(sct.Timestamp), strconv.FormatInt(li.logID, 10))
 	}
 
+	return http.StatusOK, nil
+}
+
+func addPreviewExtension(merkleLeaf *ct.MerkleTreeLeaf, logEntryType ct.LogEntryType) (int, error) {
+	value, err := asn1.Marshal(ct.PreviewOperationExtensionValue{
+		EntryType: int32(logEntryType),
+	})
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to marshall PreviewOperationExtensionValue: %s", err)
+	}
+	ext, err := asn1.Marshal(ct.CTExtension{
+		Id:       x509.OIDPreviewOperationExtension,
+		Critical: true,
+		Value:    value,
+	})
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("failed to marshall CTExtension: %s", err)
+	}
+	merkleLeaf.TimestampedEntry.Extensions = ext
 	return http.StatusOK, nil
 }
 
@@ -381,6 +408,10 @@ func verifyResolutionSignature(pubKey crypto.PublicKey, r Resolution) error {
 	tbsResolution := Resolution{
 		ComplaintID: r.ComplaintID,
 		Reason:      r.Reason,
+		Target: CrlSetID{
+			IssuerSpkiHash: r.Target.IssuerSpkiHash,
+			SerialNumber:   r.Target.SerialNumber,
+		},
 		Description: r.Description,
 		Resolver:    r.Resolver,
 	}
@@ -398,7 +429,11 @@ func verifyResolutionSignature(pubKey crypto.PublicKey, r Resolution) error {
 func verifyComplaintSignature(pubKey crypto.PublicKey, c Complaint) error {
 	tbsComplaint := Complaint{
 		// SerialNumber: c.SerialNumber,
-		Reason:     c.Reason,
+		Reason: c.Reason,
+		Target: CrlSetID{
+			IssuerSpkiHash: c.Target.IssuerSpkiHash,
+			SerialNumber:   c.Target.SerialNumber,
+		},
 		Proof:      c.Proof,
 		Complainer: c.Complainer,
 	}

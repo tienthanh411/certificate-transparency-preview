@@ -233,6 +233,10 @@ type logInfo struct {
 	rpcClient trillian.TrillianLogClient
 	// signer signs objects (e.g. STHs, SCTs) for regular logs
 	signer crypto.Signer
+	// TODO(weihaw): we could further distinguish SCTissuance from SCTpreview
+	// by signing them differently.
+	// // previewSigner signs preview objects (e.g. SCTs).
+	// previewSigner crypto.Signer
 	// sthGetter provides STHs for the log
 	sthGetter STHGetter
 }
@@ -890,7 +894,7 @@ func marshalAndWriteAddChainResponse(sct *ct.SignedCertificateTimestamp, signer 
 		SCTVersion: sct.SCTVersion,
 		Timestamp:  sct.Timestamp,
 		ID:         logID[:],
-		Extensions: base64.StdEncoding.EncodeToString(sct.Extensions),
+		Extensions: sct.Extensions,
 		Signature:  sig,
 	}
 

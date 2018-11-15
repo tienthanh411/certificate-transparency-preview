@@ -18,6 +18,8 @@
 package preview
 
 import (
+	"math/big"
+
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/tls"
 )
@@ -38,9 +40,11 @@ const (
 
 // LogEntryType constants. Extends the types defined in certificate-transparency-go/types.go
 const (
-	ComplaintLogEntryType  ct.LogEntryType = 2
-	ResolutionLogEntryType ct.LogEntryType = 3
-	CheckpointLogEntryType ct.LogEntryType = 4
+	ComplaintLogEntryType  ct.LogEntryType = 3
+	ResolutionLogEntryType ct.LogEntryType = 4
+	CheckpointLogEntryType ct.LogEntryType = 5
+	// TODO(weihaw): implement Monitor Declaration.
+	DeclarationLogEntryType ct.LogEntryType = 6
 )
 
 // ComplaintType represents the complaint reason
@@ -55,13 +59,17 @@ const (
 	InvalidRevocationComplaintType    ComplaintType = 4
 )
 
+type CrlSetID struct {
+	IssuerSpkiHash []byte   `json:"issuerspkihash"`
+	SerialNumber   *big.Int `json:"serialnumber"`
+}
+
 // Complaint represents a complained filed by a trusted CA
 type Complaint struct {
-	// TODO: consider removing serial number
-	// SerialNumber []byte              `json:"serial"`
 	Reason     ComplaintType       `json:"reason"`
-	Proof      [][]byte            `json:"proof"`
-	Complainer [][]byte            `json:"chain"`
+	Target     CrlSetID            `json:"target"`
+	Proof      [][]byte            `json:"proof"`      // DER
+	Complainer [][]byte            `json:"complainer"` // DER
 	Signature  tls.DigitallySigned `json:"signature"`
 }
 
@@ -85,8 +93,9 @@ const (
 type Resolution struct {
 	ComplaintID []byte              `json:"complaintId"`
 	Reason      ResolutionType      `json:"reason"`
-	Description string              `json:"resolutionDescription"` // Optional
-	Resolver    [][]byte            `json:"chain"`
+	Description string              `json:"description"` // Optional
+	Target      CrlSetID            `json:"target"`
+	Resolver    [][]byte            `json:"resolver"` // DER
 	Signature   tls.DigitallySigned `json:"signature"`
 }
 
@@ -101,7 +110,7 @@ type Checkpoint struct {
 	Timestamp    uint64
 	StartIndex   int64
 	EndIndex     int64
-	Checkpointer [][]byte            `json:"chain"`
+	Checkpointer [][]byte            `json:"checkpointer"`
 	Signature    tls.DigitallySigned `json:"signature"`
 }
 
