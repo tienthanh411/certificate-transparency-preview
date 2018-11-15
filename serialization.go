@@ -150,7 +150,7 @@ func MerkleTreeLeafFromChain(chain []*x509.Certificate, etype LogEntryType, time
 		leaf.TimestampedEntry.X509Entry = &ASN1Cert{Data: chain[0].Raw}
 		return &leaf, nil
 	}
-	if etype != PrecertLogEntryType {
+	if etype != PrecertLogEntryType && etype != PreviewLogEntryType {
 		return nil, fmt.Errorf("unknown LogEntryType %d", etype)
 	}
 

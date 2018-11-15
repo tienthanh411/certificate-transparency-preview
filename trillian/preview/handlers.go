@@ -86,11 +86,15 @@ type EntrypointName string
 
 // Constants for entrypoint names, as exposed in statistics/logging.
 const (
-	AddChainName          = EntrypointName("AddChain")
-	AddComplaintName      = EntrypointName("AddComplaint")
-	AddPreChainName       = EntrypointName("AddPreChain")
-	AddResolutionName     = EntrypointName("AddResolution")
-	AddCheckpointName     = EntrypointName("AddCheckpoint")
+	AddChainName    = EntrypointName("AddChain")    // issuance
+	AddPreChainName = EntrypointName("AddPreChain") // issuance
+
+	// Following is preview mode entrypoints.
+	AddPreviewChainName = EntrypointName("AddPreviewChain") // preview
+	AddComplaintName    = EntrypointName("AddComplaint")
+	AddResolutionName   = EntrypointName("AddResolution")
+	AddCheckpointName   = EntrypointName("AddCheckpoint")
+
 	GetSTHName            = EntrypointName("GetSTH")
 	GetSTHConsistencyName = EntrypointName("GetSTHConsistency")
 	GetProofByHashName    = EntrypointName("GetProofByHash")
@@ -124,8 +128,9 @@ func setupMetrics(mf monitoring.MetricFactory) {
 }
 
 // Entrypoints is a list of entrypoint names as exposed in statistics/logging.
-var Entrypoints = []EntrypointName{AddChainName, AddComplaintName, AddPreChainName, AddResolutionName,
-	AddCheckpointName, GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName,
+var Entrypoints = []EntrypointName{AddChainName, AddPreChainName,
+	AddPreviewChainName, AddComplaintName, AddResolutionName, AddCheckpointName, // preview entrypoints
+	GetSTHName, GetSTHConsistencyName, GetProofByHashName, GetEntriesName,
 	GetRootsName, GetEntryAndProofName}
 
 // PathHandlers maps from a path to the relevant AppHandler instance.
@@ -283,9 +288,10 @@ func (li *logInfo) Handlers(prefix string) PathHandlers {
 
 	// Bind the logInfo instance to give an AppHandler instance for each endpoint.
 	ph := PathHandlers{
-		prefix + AddComplaintPath:  AppHandler{Info: li, Handler: addComplaint, Name: AddComplaintName, Method: http.MethodPost},
-		prefix + AddResolutionPath: AppHandler{Info: li, Handler: addResolution, Name: AddResolutionName, Method: http.MethodPost},
-		prefix + AddCheckpointPath: AppHandler{Info: li, Handler: addCheckpoint, Name: AddCheckpointName, Method: http.MethodPost},
+		prefix + AddPreviewChainPath: AppHandler{Info: li, Handler: addPreviewChain, Name: AddPreviewChainName, Method: http.MethodPost},
+		prefix + AddComplaintPath:    AppHandler{Info: li, Handler: addComplaint, Name: AddComplaintName, Method: http.MethodPost},
+		prefix + AddResolutionPath:   AppHandler{Info: li, Handler: addResolution, Name: AddResolutionName, Method: http.MethodPost},
+		prefix + AddCheckpointPath:   AppHandler{Info: li, Handler: addCheckpoint, Name: AddCheckpointName, Method: http.MethodPost},
 
 		prefix + ct.AddChainPath:          AppHandler{Info: li, Handler: addChain, Name: AddChainName, Method: http.MethodPost},
 		prefix + ct.AddPreChainPath:       AppHandler{Info: li, Handler: addPreChain, Name: AddPreChainName, Method: http.MethodPost},
@@ -350,15 +356,21 @@ func (li *logInfo) chargeUser(r *http.Request) *trillian.ChargeTo {
 
 // addChainInternal is called by add-chain and add-pre-chain as the logic involved in
 // processing these requests is almost identical
-func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request, isPrecert bool) (int, error) {
+func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request, etype ct.LogEntryType) (int, error) {
 	var method EntrypointName
-	var etype ct.LogEntryType
-	if isPrecert {
+	var isPrecert bool
+	switch etype {
+	case ct.PrecertLogEntryType:
 		method = AddPreChainName
-		etype = ct.PrecertLogEntryType
-	} else {
+		isPrecert = true
+	case ct.X509LogEntryType:
 		method = AddChainName
-		etype = ct.X509LogEntryType
+		isPrecert = false
+	case ct.PreviewLogEntryType:
+		method = AddPreviewChainName
+		isPrecert = true
+	default:
+		return http.StatusInternalServerError, fmt.Errorf("wrong LogEntryType: %s", etype)
 	}
 
 	// Check the contents of the request and convert to slice of certificates.
@@ -456,11 +468,15 @@ func addChainInternal(ctx context.Context, li *logInfo, w http.ResponseWriter, r
 }
 
 func addChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	return addChainInternal(ctx, li, w, r, false)
+	return addChainInternal(ctx, li, w, r, ct.X509LogEntryType)
 }
 
 func addPreChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
-	return addChainInternal(ctx, li, w, r, true)
+	return addChainInternal(ctx, li, w, r, ct.PrecertLogEntryType)
+}
+
+func addPreviewChain(ctx context.Context, li *logInfo, w http.ResponseWriter, r *http.Request) (int, error) {
+	return addChainInternal(ctx, li, w, r, ct.PreviewLogEntryType)
 }
 
 // PingTreeHead retrieves a tree head for the given log, and updates the STH

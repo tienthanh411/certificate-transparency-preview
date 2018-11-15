@@ -315,6 +315,7 @@ type CertificateTimestamp struct {
 	EntryType     LogEntryType   `tls:"maxval:65535"`
 	X509Entry     *ASN1Cert      `tls:"selector:EntryType,val:0"`
 	PrecertEntry  *PreCert       `tls:"selector:EntryType,val:1"`
+	PreviewEntry  *PreCert       `tls:"selector:EntryType,val:2"`
 	JSONEntry     *JSONDataEntry `tls:"selector:EntryType,val:32768"`
 	Extensions    []byte         `tls:"minlen:0,maxlen:16777215"`
 }
@@ -333,6 +334,7 @@ type TimestampedEntry struct {
 	EntryType    LogEntryType   `tls:"maxval:65535"`
 	X509Entry    *ASN1Cert      `tls:"selector:EntryType,val:0"`
 	PrecertEntry *PreCert       `tls:"selector:EntryType,val:1"`
+	PreviewEntry *PreCert       `tls:"selector:EntryType,val:2"`
 	JSONEntry    *JSONDataEntry `tls:"selector:EntryType,val:32768"`
 	Extensions   []byte         `tls:"minlen:0,maxlen:1677215"`
 }

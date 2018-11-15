@@ -188,8 +188,9 @@ func (info handlerTestInfo) getHandlers() map[string]AppHandler {
 
 func (info handlerTestInfo) postHandlers() map[string]AppHandler {
 	return map[string]AppHandler{
-		"add-chain":     {Info: info.li, Handler: addChain, Name: "AddChain", Method: http.MethodPost},
-		"add-pre-chain": {Info: info.li, Handler: addPreChain, Name: "AddPreChain", Method: http.MethodPost},
+		"add-chain":         {Info: info.li, Handler: addChain, Name: "AddChain", Method: http.MethodPost},
+		"add-pre-chain":     {Info: info.li, Handler: addPreChain, Name: "AddPreChain", Method: http.MethodPost},
+		"add-preview-chain": {Info: info.li, Handler: addPreviewChain, Name: "AddPreviewChain", Method: http.MethodPost},
 	}
 }
 
@@ -591,6 +592,136 @@ func TestAddPrechain(t *testing.T) {
 		recorder := makeAddPrechainRequest(t, info.li, chain)
 		if recorder.Code != test.want {
 			t.Errorf("addPrechain(%s)=%d (body:%v); want %d", test.descr, recorder.Code, recorder.Body, test.want)
+			continue
+		}
+		if test.want == http.StatusOK {
+			var resp ct.AddChainResponse
+			if err := json.NewDecoder(recorder.Body).Decode(&resp); err != nil {
+				t.Fatalf("json.Decode(%s)=%v; want nil", recorder.Body.Bytes(), err)
+			}
+
+			if got, want := ct.Version(resp.SCTVersion), ct.V1; got != want {
+				t.Errorf("resp.SCTVersion=%v; want %v", got, want)
+			}
+			if got, want := resp.ID, demoLogID[:]; !bytes.Equal(got, want) {
+				t.Errorf("resp.ID=%x; want %x", got, want)
+			}
+			if got, want := resp.Timestamp, uint64(1469185273000); got != want {
+				t.Errorf("resp.Timestamp=%d; want %d", got, want)
+			}
+			if got, want := hex.EncodeToString(resp.Signature), "040300067369676e6564"; got != want {
+				t.Errorf("resp.Signature=%s; want %s", got, want)
+			}
+		}
+	}
+}
+
+func TestAddPreviewChain(t *testing.T) {
+	var tests = []struct {
+		descr         string
+		chain         []string
+		root          string
+		toSign        string // hex-encoded
+		err           error
+		want          int
+		wantQuotaUser string
+	}{
+		{
+			descr: "leaf-signed-by-different",
+			chain: []string{cttestonly.PrecertPEMValid, cttestonly.FakeIntermediateCertPEM},
+			want:  http.StatusBadRequest,
+		},
+		{
+			descr: "wrong-entry-type",
+			chain: []string{cttestonly.TestCertPEM},
+			want:  http.StatusBadRequest,
+		},
+		{
+			descr:  "backend-rpc-fail",
+			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			err:    status.Errorf(codes.Internal, "error"),
+			want:   http.StatusInternalServerError,
+		},
+		{
+			descr:  "success",
+			chain:  []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			want:   http.StatusOK,
+		},
+		{
+			descr:         "success with quota",
+			chain:         []string{cttestonly.PrecertPEMValid, cttestonly.CACertPEM},
+			toSign:        "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			want:          http.StatusOK,
+			wantQuotaUser: remoteQuotaUser,
+		},
+		{
+			descr:  "success-without-root",
+			chain:  []string{cttestonly.PrecertPEMValid},
+			toSign: "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			want:   http.StatusOK,
+		},
+		{
+			descr:         "success-without-root with quota",
+			chain:         []string{cttestonly.PrecertPEMValid},
+			toSign:        "92ecae1a2dc67a6c5f9c96fa5cab4c2faf27c48505b696dad926f161b0ca675a",
+			want:          http.StatusOK,
+			wantQuotaUser: remoteQuotaUser,
+		},
+	}
+
+	signer, err := setupSigner(fakeSignature)
+	if err != nil {
+		t.Fatalf("Failed to create test signer: %v", err)
+	}
+
+	info := setupTest(t, []string{cttestonly.CACertPEM}, signer)
+	defer info.mockCtrl.Finish()
+
+	for _, test := range tests {
+		info.setRemoteQuotaUser(test.wantQuotaUser)
+		pool := loadCertsIntoPoolOrDie(t, test.chain)
+		chain := createJSONChain(t, *pool)
+		if len(test.toSign) > 0 {
+			root := info.roots.RawCertificates()[0]
+			merkleLeaf, err := ct.MerkleTreeLeafFromChain([]*x509.Certificate{pool.RawCertificates()[0], root}, ct.PreviewLogEntryType, fakeTimeMillis)
+			if err != nil {
+				t.Errorf("Unexpected error signing SCT: %v", err)
+				continue
+			}
+			extStatus, _ := addPreviewExtension(merkleLeaf, ct.PreviewLogEntryType)
+			if extStatus != http.StatusOK {
+				t.Errorf("Failed to create preview extension")
+				continue
+			}
+			leafChain := pool.RawCertificates()
+			if !leafChain[len(leafChain)-1].Equal(root) {
+				// The submitted chain may not include a root, but the generated LogLeaf will
+				fullChain := make([]*x509.Certificate, len(leafChain)+1)
+				copy(fullChain, leafChain)
+				fullChain[len(leafChain)] = root
+				leafChain = fullChain
+			}
+			leaves := logLeavesForCert(t, leafChain, merkleLeaf, true)
+			queuedLeaves := make([]*trillian.QueuedLogLeaf, len(leaves))
+			for i, leaf := range leaves {
+				queuedLeaves[i] = &trillian.QueuedLogLeaf{
+					Leaf:   leaf,
+					Status: status.New(codes.OK, "ok").Proto(),
+				}
+			}
+			rsp := trillian.QueueLeavesResponse{QueuedLeaves: queuedLeaves}
+			req := &trillian.QueueLeavesRequest{LogId: 0x42, Leaves: leaves}
+			if len(test.wantQuotaUser) != 0 {
+				req.ChargeTo = &trillian.ChargeTo{User: []string{test.wantQuotaUser}}
+			}
+			info.client.EXPECT().QueueLeaves(deadlineMatcher(), req).Return(&rsp, test.err)
+		}
+
+		recorder := makeAddPreviewChainRequest(t, info.li, chain)
+		if recorder.Code != test.want {
+			t.Errorf("addPreviewChain(%s)=%d (body:%v); want %d", test.descr, recorder.Code, recorder.Body, test.want)
 			continue
 		}
 		if test.want == http.StatusOK {
@@ -2085,6 +2216,12 @@ func makeAddChainRequest(t *testing.T, li *logInfo, body io.Reader) *httptest.Re
 	t.Helper()
 	handler := AppHandler{Info: li, Handler: addChain, Name: "AddChain", Method: http.MethodPost}
 	return makeAddChainRequestInternal(t, handler, "add-chain", body)
+}
+
+func makeAddPreviewChainRequest(t *testing.T, li *logInfo, body io.Reader) *httptest.ResponseRecorder {
+	t.Helper()
+	handler := AppHandler{Info: li, Handler: addPreviewChain, Name: "AddPreviewChain", Method: http.MethodPost}
+	return makeAddChainRequestInternal(t, handler, "add-preview-chain", body)
 }
 
 func makeAddChainRequestInternal(t *testing.T, handler AppHandler, path string, body io.Reader) *httptest.ResponseRecorder {
