@@ -31,7 +31,10 @@ import (
 	"github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/jsonclient"
 	"github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+
+	//"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+
+	"github.com/google/certificate-transparency-go/trillian/preview/configpb"
 	"github.com/google/certificate-transparency-go/x509"
 
 	ct "github.com/google/certificate-transparency-go"

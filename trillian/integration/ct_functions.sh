@@ -32,8 +32,9 @@ ct_prep_test() {
   echo "Launching core Trillian log components"
   log_prep_test "${rpc_server_count}" "${log_signer_count}"
 
-  echo "Building CT personality code"
-  go build ${GOFLAGS} github.com/google/certificate-transparency-go/trillian/ctfe/ct_server
+  echo "Building CT personality code (preview)"
+  #go build ${GOFLAGS} github.com/google/certificate-transparency-go/trillian/ctfe/ct_server
+  go build ${GOFLAGS} github.com/google/certificate-transparency-go/trillian/preview/preview_server
 
   echo "Provisioning logs for CT"
   ct_provision "${RPC_SERVER_1}"
@@ -49,7 +50,7 @@ ct_prep_test() {
     fi
 
     echo "Starting CT HTTP server on localhost:${port}, metrics on localhost:${metrics_port}"
-    ./ct_server ${ETCD_OPTS} --log_config="${CT_COMBINED_CFG}" --log_rpc_server="${RPC_SERVERS}" --http_endpoint="localhost:${port}" --metrics_endpoint="localhost:${metrics_port}" &
+    ./preview_server ${ETCD_OPTS} --log_config="${CT_COMBINED_CFG}" --log_rpc_server="${RPC_SERVERS}" --http_endpoint="localhost:${port}" --metrics_endpoint="localhost:${metrics_port}" &
     pid=$!
     CT_SERVER_PIDS+=(${pid})
     wait_for_server_startup ${port}

@@ -23,8 +23,10 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/google/certificate-transparency-go/trillian/ctfe"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+	//"github.com/google/certificate-transparency-go/trillian/ctfe"
+	//"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+	"github.com/google/certificate-transparency-go/trillian/preview"
+	"github.com/google/certificate-transparency-go/trillian/preview/configpb"
 	"github.com/google/trillian"
 	"github.com/google/trillian/client"
 	"github.com/google/trillian/monitoring/prometheus"
@@ -78,14 +80,14 @@ func NewCTLogEnv(ctx context.Context, cfgs []*configpb.LogConfig, numSequencers 
 		defer wg.Done()
 		client := trillian.NewTrillianLogClient(env.ClientConn)
 		for _, cfg := range cfgs {
-			opts := ctfe.InstanceOptions{
+			opts := preview.InstanceOptions{
 				Config:        cfg,
 				Client:        client,
 				Deadline:      10 * time.Second,
 				MetricFactory: prometheus.MetricFactory{},
-				RequestLog:    new(ctfe.DefaultRequestLog),
+				RequestLog:    new(preview.DefaultRequestLog),
 			}
-			handlers, err := ctfe.SetUpInstance(ctx, opts)
+			handlers, err := preview.SetUpInstance(ctx, opts)
 			if err != nil {
 				glog.Fatalf("Failed to set up log instance for %+v: %v", cfg, err)
 			}

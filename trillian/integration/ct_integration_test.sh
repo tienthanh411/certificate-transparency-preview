@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x -v
 set -e
 . "${GOPATH}"/src/github.com/google/trillian/integration/functions.sh
 INTEGRATION_DIR="$( cd "$( dirname "$0" )" && pwd )"

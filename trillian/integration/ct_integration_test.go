@@ -25,8 +25,10 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
-	"github.com/google/certificate-transparency-go/trillian/ctfe"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+	//	"github.com/google/certificate-transparency-go/trillian/ctfe"
+	//	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+	"github.com/google/certificate-transparency-go/trillian/preview"
+	"github.com/google/certificate-transparency-go/trillian/preview/configpb"
 	"github.com/google/trillian/crypto/keyspb"
 	"github.com/google/trillian/storage/testdb"
 
@@ -57,7 +59,7 @@ func commonSetup(t *testing.T) []*configpb.LogConfig {
 	fmt.Printf("Today's test has been brought to you by the letters C and T and the number %#x\n", *seed)
 	rand.Seed(*seed)
 
-	cfgs, err := ctfe.LogConfigFromFile(*logConfig)
+	cfgs, err := preview.LogConfigFromFile(*logConfig)
 	if err != nil {
 		t.Fatalf("Failed to read log config: %v", err)
 	}

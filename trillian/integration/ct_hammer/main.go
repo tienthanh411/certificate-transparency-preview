@@ -31,8 +31,11 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/google/certificate-transparency-go/fixchain/ratelimiter"
-	"github.com/google/certificate-transparency-go/trillian/ctfe"
+
+	// "github.com/google/certificate-transparency-go/trillian/ctfe"
+
 	"github.com/google/certificate-transparency-go/trillian/integration"
+	"github.com/google/certificate-transparency-go/trillian/preview"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/trillian/monitoring"
 	"github.com/google/trillian/monitoring/prometheus"
@@ -88,7 +91,7 @@ func main() {
 	fmt.Printf("Today's test has been brought to you by the letters C and T and the number %#x\n", *seed)
 	rand.Seed(*seed)
 
-	cfg, err := ctfe.LogConfigFromFile(*logConfig)
+	cfg, err := preview.LogConfigFromFile(*logConfig)
 	if err != nil {
 		glog.Exitf("Failed to read log config: %v", err)
 	}
@@ -133,25 +136,25 @@ func main() {
 	}
 
 	bias := integration.HammerBias{
-		Bias: map[ctfe.EntrypointName]int{
-			ctfe.AddChainName:          *addChainBias,
-			ctfe.AddPreChainName:       *addPreChainBias,
-			ctfe.GetSTHName:            *getSTHBias,
-			ctfe.GetSTHConsistencyName: *getSTHConsistencyBias,
-			ctfe.GetProofByHashName:    *getProofByHashBias,
-			ctfe.GetEntriesName:        *getEntriesBias,
-			ctfe.GetRootsName:          *getRootsBias,
-			ctfe.GetEntryAndProofName:  *getEntryAndProofBias,
+		Bias: map[preview.EntrypointName]int{
+			preview.AddChainName:          *addChainBias,
+			preview.AddPreChainName:       *addPreChainBias,
+			preview.GetSTHName:            *getSTHBias,
+			preview.GetSTHConsistencyName: *getSTHConsistencyBias,
+			preview.GetProofByHashName:    *getProofByHashBias,
+			preview.GetEntriesName:        *getEntriesBias,
+			preview.GetRootsName:          *getRootsBias,
+			preview.GetEntryAndProofName:  *getEntryAndProofBias,
 		},
-		InvalidChance: map[ctfe.EntrypointName]int{
-			ctfe.AddChainName:          *invalidChance,
-			ctfe.AddPreChainName:       *invalidChance,
-			ctfe.GetSTHName:            0,
-			ctfe.GetSTHConsistencyName: *invalidChance,
-			ctfe.GetProofByHashName:    *invalidChance,
-			ctfe.GetEntriesName:        *invalidChance,
-			ctfe.GetRootsName:          0,
-			ctfe.GetEntryAndProofName:  0,
+		InvalidChance: map[preview.EntrypointName]int{
+			preview.AddChainName:          *invalidChance,
+			preview.AddPreChainName:       *invalidChance,
+			preview.GetSTHName:            0,
+			preview.GetSTHConsistencyName: *invalidChance,
+			preview.GetProofByHashName:    *invalidChance,
+			preview.GetEntriesName:        *invalidChance,
+			preview.GetRootsName:          0,
+			preview.GetEntryAndProofName:  0,
 		},
 	}
 

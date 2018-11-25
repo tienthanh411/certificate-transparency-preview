@@ -49,11 +49,12 @@ echo ${tree_id}
 echo 'Manually edit CT config file to put the tree ID value in place of @TREE_ID@'
 sed -i'.bak' "1,/@TREE_ID@/s/@TREE_ID@/${tree_id}/" demo-script.cfg
 
-echo 'Building CT personality code'
-go build github.com/google/certificate-transparency-go/trillian/ctfe/ct_server
+echo 'Building CT personality code (prevew)'
+# go build github.com/google/certificate-transparency-go/trillian/ctfe/ct_server
+go build github.com/google/certificate-transparency-go/trillian/preview/preview_server
 
 echo 'Running the CT personality (do in separate terminal)'
-./ct_server --log_config=demo-script.cfg --log_rpc_server=localhost:6962 --http_endpoint=localhost:6965 &
+./preview_server --log_config=demo-script.cfg --log_rpc_server=localhost:6962 --http_endpoint=localhost:6965 &
 ct_pid=$!
 sleep 5
 
@@ -87,7 +88,7 @@ cat demo-script.cfg | sed 's/athos/porthos/' | sed "s/${tree_id}/${tree_id_2}/" 
 
 echo 'Stop and restart the CT personality to use the new config (note changed --log_config)'
 kill -9 ${ct_pid}
-./ct_server --log_config=demo-script-2.cfg --log_rpc_server=localhost:6962 --http_endpoint=localhost:6965 &
+./preview_server --log_config=demo-script-2.cfg --log_rpc_server=localhost:6962 --http_endpoint=localhost:6965 &
 sleep 5
 
 echo 'See the new (empty) log'

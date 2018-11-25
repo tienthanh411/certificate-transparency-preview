@@ -33,8 +33,11 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/tls"
-	"github.com/google/certificate-transparency-go/trillian/ctfe"
-	"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+
+	//"github.com/google/certificate-transparency-go/trillian/ctfe"
+	//"github.com/google/certificate-transparency-go/trillian/ctfe/configpb"
+	"github.com/google/certificate-transparency-go/trillian/preview"
+	"github.com/google/certificate-transparency-go/trillian/preview/configpb"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/trillian/monitoring"
 
@@ -152,21 +155,21 @@ type HammerConfig struct {
 
 // HammerBias indicates the bias for selecting different log operations.
 type HammerBias struct {
-	Bias  map[ctfe.EntrypointName]int
+	Bias  map[preview.EntrypointName]int
 	total int
 	// InvalidChance gives the odds of performing an invalid operation, as the N in 1-in-N.
-	InvalidChance map[ctfe.EntrypointName]int
+	InvalidChance map[preview.EntrypointName]int
 }
 
 // Choose randomly picks an operation to perform according to the biases.
-func (hb HammerBias) Choose() ctfe.EntrypointName {
+func (hb HammerBias) Choose() preview.EntrypointName {
 	if hb.total == 0 {
-		for _, ep := range ctfe.Entrypoints {
+		for _, ep := range preview.Entrypoints {
 			hb.total += hb.Bias[ep]
 		}
 	}
 	which := rand.Intn(hb.total)
-	for _, ep := range ctfe.Entrypoints {
+	for _, ep := range preview.Entrypoints {
 		which -= hb.Bias[ep]
 		if which < 0 {
 			return ep
@@ -176,7 +179,7 @@ func (hb HammerBias) Choose() ctfe.EntrypointName {
 }
 
 // Invalid randomly chooses whether an operation should be invalid.
-func (hb HammerBias) Invalid(ep ctfe.EntrypointName) bool {
+func (hb HammerBias) Invalid(ep preview.EntrypointName) bool {
 	chance := hb.InvalidChance[ep]
 	if chance <= 0 {
 		return false
@@ -301,7 +304,7 @@ type hammerState struct {
 	// created) when we are able to get an inclusion proof for it.
 	pending pendingCerts
 	// Operations that are required to fix dependencies.
-	nextOp []ctfe.EntrypointName
+	nextOp []preview.EntrypointName
 	// notAfter is the NotAfter time used for new certs and precerts.
 	notAfter time.Time
 }
@@ -343,7 +346,7 @@ func newHammerState(cfg *HammerConfig) (*hammerState, error) {
 	state := hammerState{
 		cfg:       cfg,
 		altSigner: altSigner,
-		nextOp:    make([]ctfe.EntrypointName, 0),
+		nextOp:    make([]preview.EntrypointName, 0),
 		notAfter:  notAfter,
 	}
 	return &state, nil
@@ -383,7 +386,7 @@ func (s *hammerState) lastTreeSize() uint64 {
 	return s.sth[0].TreeSize
 }
 
-func (s *hammerState) needOps(ops ...ctfe.EntrypointName) {
+func (s *hammerState) needOps(ops ...preview.EntrypointName) {
 	glog.V(2).Infof("need operations %+v to satisfy dependencies", ops)
 	s.nextOp = append(s.nextOp, ops...)
 }
@@ -680,17 +683,17 @@ func (s *hammerState) chooseSTHs(ctx context.Context) (*ct.SignedTreeHead, *ct.S
 	which := rand.Intn(sthCount)
 	if s.sth[which] == nil {
 		glog.V(3).Infof("%s: skipping get-sth-consistency as no earlier STH", s.cfg.LogCfg.Prefix)
-		s.needOps(ctfe.GetSTHName)
+		s.needOps(preview.GetSTHName)
 		return nil, nil, errSkip{}
 	}
 	if s.sth[which].TreeSize == 0 {
 		glog.V(3).Infof("%s: skipping get-sth-consistency as no earlier STH", s.cfg.LogCfg.Prefix)
-		s.needOps(ctfe.AddChainName, ctfe.GetSTHName)
+		s.needOps(preview.AddChainName, preview.GetSTHName)
 		return nil, nil, errSkip{}
 	}
 	if s.sth[which].TreeSize == sthNow.TreeSize {
 		glog.V(3).Infof("%s: skipping get-sth-consistency as same size (%d)", s.cfg.LogCfg.Prefix, sthNow.TreeSize)
-		s.needOps(ctfe.AddChainName, ctfe.GetSTHName)
+		s.needOps(preview.AddChainName, preview.GetSTHName)
 		return nil, nil, errSkip{}
 	}
 	return s.sth[which], sthNow, nil
@@ -854,17 +857,17 @@ func (s *hammerState) getProofByHashInvalid(ctx context.Context) error {
 func (s *hammerState) getEntries(ctx context.Context) error {
 	if s.sth[0] == nil {
 		glog.V(3).Infof("%s: skipping get-entries as no earlier STH", s.cfg.LogCfg.Prefix)
-		s.needOps(ctfe.GetSTHName)
+		s.needOps(preview.GetSTHName)
 		return errSkip{}
 	}
 	if s.sth[0].TreeSize == 0 {
 		if s.pending.empty() {
 			glog.V(3).Infof("%s: skipping get-entries as tree size 0", s.cfg.LogCfg.Prefix)
-			s.needOps(ctfe.AddChainName, ctfe.GetSTHName)
+			s.needOps(preview.AddChainName, preview.GetSTHName)
 			return errSkip{}
 		}
 		glog.V(3).Infof("%s: skipping get-entries as STH stale", s.cfg.LogCfg.Prefix)
-		s.needOps(ctfe.GetSTHName)
+		s.needOps(preview.GetSTHName)
 		return errSkip{}
 	}
 	// Entry indices are zero-based, and may or may not be allowed to extend
@@ -967,7 +970,7 @@ func (s *hammerState) String() string {
 	totalReqs := 0
 	totalInvalidReqs := 0
 	totalErrs := 0
-	for _, ep := range ctfe.Entrypoints {
+	for _, ep := range preview.Entrypoints {
 		reqCount := int(reqs.Value(s.label(), string(ep)))
 		totalReqs += reqCount
 		if s.cfg.EPBias.Bias[ep] > 0 {
@@ -979,26 +982,26 @@ func (s *hammerState) String() string {
 	return fmt.Sprintf("%10s: lastSTH.size=%s ops: total=%d invalid=%d errs=%v%s", s.cfg.LogCfg.Prefix, sthSize(s.sth[0]), totalReqs, totalInvalidReqs, totalErrs, details)
 }
 
-func (s *hammerState) performOp(ctx context.Context, ep ctfe.EntrypointName) (int, error) {
+func (s *hammerState) performOp(ctx context.Context, ep preview.EntrypointName) (int, error) {
 	s.cfg.Limiter.Wait()
 	status := http.StatusOK
 	var err error
 	switch ep {
-	case ctfe.AddChainName:
+	case preview.AddChainName:
 		err = s.addMultiple(ctx, s.addChain)
-	case ctfe.AddPreChainName:
+	case preview.AddPreChainName:
 		err = s.addMultiple(ctx, s.addPreChain)
-	case ctfe.GetSTHName:
+	case preview.GetSTHName:
 		err = s.getSTH(ctx)
-	case ctfe.GetSTHConsistencyName:
+	case preview.GetSTHConsistencyName:
 		err = s.getSTHConsistency(ctx)
-	case ctfe.GetProofByHashName:
+	case preview.GetProofByHashName:
 		err = s.getProofByHash(ctx)
-	case ctfe.GetEntriesName:
+	case preview.GetEntriesName:
 		err = s.getEntries(ctx)
-	case ctfe.GetRootsName:
+	case preview.GetRootsName:
 		err = s.getRoots(ctx)
-	case ctfe.GetEntryAndProofName:
+	case preview.GetEntryAndProofName:
 		status = http.StatusNotImplemented
 		glog.V(2).Infof("%s: hammering entrypoint %s not yet implemented", s.cfg.LogCfg.Prefix, ep)
 	default:
@@ -1007,28 +1010,28 @@ func (s *hammerState) performOp(ctx context.Context, ep ctfe.EntrypointName) (in
 	return status, err
 }
 
-func (s *hammerState) performInvalidOp(ctx context.Context, ep ctfe.EntrypointName) error {
+func (s *hammerState) performInvalidOp(ctx context.Context, ep preview.EntrypointName) error {
 	s.cfg.Limiter.Wait()
 	switch ep {
-	case ctfe.AddChainName:
+	case preview.AddChainName:
 		return s.addChainInvalid(ctx)
-	case ctfe.AddPreChainName:
+	case preview.AddPreChainName:
 		return s.addPreChainInvalid(ctx)
-	case ctfe.GetSTHConsistencyName:
+	case preview.GetSTHConsistencyName:
 		return s.getSTHConsistencyInvalid(ctx)
-	case ctfe.GetProofByHashName:
+	case preview.GetProofByHashName:
 		return s.getProofByHashInvalid(ctx)
-	case ctfe.GetEntriesName:
+	case preview.GetEntriesName:
 		return s.getEntriesInvalid(ctx)
-	case ctfe.GetSTHName, ctfe.GetRootsName:
+	case preview.GetSTHName, preview.GetRootsName:
 		return fmt.Errorf("no invalid request possible for entrypoint %s", ep)
-	case ctfe.GetEntryAndProofName:
+	case preview.GetEntryAndProofName:
 		return fmt.Errorf("hammering entrypoint %s not yet implemented", ep)
 	}
 	return fmt.Errorf("internal error: unknown entrypoint %s", ep)
 }
 
-func (s *hammerState) chooseOp() (ctfe.EntrypointName, bool) {
+func (s *hammerState) chooseOp() (preview.EntrypointName, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
