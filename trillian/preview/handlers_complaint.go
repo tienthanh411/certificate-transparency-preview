@@ -27,6 +27,7 @@ import (
 
 	"github.com/golang/glog"
 	ct "github.com/google/certificate-transparency-go"
+	"github.com/google/certificate-transparency-go/crlsetkey"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/trillian"
@@ -42,7 +43,7 @@ func addComplaint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *ht
 		return http.StatusBadRequest, fmt.Errorf("failed to parse add-complaint body: %s", err)
 	}
 
-	chain, err := verifyAddComplaint(li, addComplaintReq)
+	_, complainerChain, err := verifyAddComplaint(li, addComplaintReq)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("failed to verify add-complaint contents: %s", err)
 	}
@@ -65,9 +66,10 @@ func addComplaint(ctx context.Context, li *logInfo, w http.ResponseWriter, r *ht
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to build LogLeaf: %s", err)
 	}
+	addCrlSetKeyFromCrlSetID(&addComplaintReq.Target, &leaf)
 
 	// Send the Merkle tree leaf on to the Log server.
-	queuedLeaf, err := queueLogLeaf(li, leaf, chain, r, method, ctx)
+	queuedLeaf, err := queueLogLeaf(li, leaf, complainerChain, r, method, ctx)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -134,6 +136,7 @@ func addResolution(ctx context.Context, li *logInfo, w http.ResponseWriter, r *h
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to build LogLeaf: %s", err)
 	}
+	addCrlSetKeyFromCrlSetID(&addResolutionReq.Target, &leaf)
 
 	// Send the Merkle tree leaf on to the Log server.
 	queuedLeaf, err := queueLogLeaf(li, leaf, chain, r, method, ctx)
@@ -280,8 +283,7 @@ func generateSCT(li *logInfo, queuedLeaf *trillian.QueuedLogLeaf) (*ct.SignedCer
 }
 
 func buildLogLeafForJSONMerkleTreeLeaf(li *logInfo,
-	merkleLeaf ct.MerkleTreeLeaf, leafIndex int64, jsonData interface{},
-) (trillian.LogLeaf, error) {
+	merkleLeaf ct.MerkleTreeLeaf, leafIndex int64, jsonData interface{}) (trillian.LogLeaf, error) {
 	leafData, err := tls.Marshal(merkleLeaf)
 	if err != nil {
 		glog.Warningf("%s: Failed to serialize Merkle leaf: %v", li.LogPrefix, err)
@@ -303,56 +305,48 @@ func buildLogLeafForJSONMerkleTreeLeaf(li *logInfo,
 	}, nil
 }
 
+func addCrlSetKeyFromCrlSetID(id *CrlSetID, logLeaf *trillian.LogLeaf) {
+	logLeaf.CrlSetKey = crlsetkey.GenerateCrlSetKeyFromRaw(id.IssuerSpkiHash, id.SerialNumber.Bytes())
+}
+
 // verifyAddComplaint is used by add-complaint. It checks whether the given
 // AddComplaintRequest is valid.
-func verifyAddComplaint(li *logInfo, req AddComplaintRequest) ([]*x509.Certificate, error) {
+func verifyAddComplaint(li *logInfo, req AddComplaintRequest) ([]*x509.Certificate, []*x509.Certificate, error) {
 	var err error
-	// The chain that signed the complaint must origin from a trusted root CA
-	chain, err := ValidateChain(req.Complaint.Complainer, li.validationOpts)
+	// The complainer chain that signed the complaint must origin from a trusted root CA
+	complainerChain, err := ValidateChain(req.Complaint.Complainer, li.validationOpts)
 	if err != nil {
-		return nil, fmt.Errorf("complaint chain failed to verify: %s", err)
-	}
-
-	// TODO(weihaw): change to allow non-CA monitors.
-	// The end of the chain must be a CA certificate
-	if !chain[0].IsCA {
-		return nil, fmt.Errorf("complaint chain not ended with a CA certificate")
+		return nil, nil, fmt.Errorf("complaint chain failed to verify: %s", err)
 	}
 
 	// The signature must be valid
-	if err = verifyComplaintSignature(chain[0].PublicKey, req.Complaint); err != nil {
-		return nil, err
-	}
-
-	// The proof chain also must origin from a trusted root CA
-	_, err = ValidateChain(req.Complaint.Proof, li.validationOpts)
-	if err != nil {
-		return nil, fmt.Errorf("proof chain failed to verify: %s", err)
+	if err = verifyComplaintSignature(complainerChain[0].PublicKey, req.Complaint); err != nil {
+		return nil, nil, err
 	}
 
 	// The complaint reason must be a known value
 	if req.Complaint.Reason != NameImpersonationComplaintType &&
 		req.Complaint.Reason != LogoImpersonationComplaintType {
-		return nil, fmt.Errorf("unknown complaint reason")
+		return nil, nil, fmt.Errorf("unknown complaint reason")
 	}
 
-	return chain, nil
+	// The proof chain also must origin from a trusted root CA
+	proofChain, verr := ValidateChain(req.Complaint.Proof, li.validationOpts)
+	if verr != nil {
+		return nil, nil, fmt.Errorf("proof chain failed to verify: %s", verr)
+	}
+
+	return proofChain, complainerChain, nil
 }
 
 // verifyAddResolution is used by add-resolution. It checks whether the given
 // AddResolutionRequest is valid and returns the parsed certificate chain in the request.
 func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certificate, error) {
 	var err error
-	// The chain that signed the complaint must origin from a trusted root CA
+	// The resolver chain that signed the complaint must origin from a trusted root CA
 	chain, err := ValidateChain(req.Resolution.Resolver, li.validationOpts)
 	if err != nil {
 		return nil, fmt.Errorf("resolution chain failed to verify: %s", err)
-	}
-
-	// TODO(weihaw): change to allow non-CA monitors.
-	// The end of the chain must be a CA certificate
-	if !chain[0].IsCA {
-		return nil, fmt.Errorf("complaint chain not ended with a CA certificate")
 	}
 
 	// The signature must be valid
@@ -372,16 +366,10 @@ func verifyAddResolution(li *logInfo, req AddResolutionRequest) ([]*x509.Certifi
 // AddCheckpointRequest is valid and returns the parsed certificate chain in the request.
 func verifyAddCheckpoint(li *logInfo, req AddCheckpointRequest) ([]*x509.Certificate, error) {
 	var err error
-	// The chain that signed the complaint must origin from a trusted root CA
+	// The checkpointer chain that signed the complaint must origin from a trusted root CA
 	chain, err := ValidateChain(req.Checkpoint.Checkpointer, li.validationOpts)
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint chain failed to verify: %s", err)
-	}
-
-	// TODO(weihaw): change to allow non-CA monitors.
-	// The end of the chain must be a CA certificate
-	if !chain[0].IsCA {
-		return nil, fmt.Errorf("checkpoint chain not ended with a CA certificate")
 	}
 
 	// The signature must be valid

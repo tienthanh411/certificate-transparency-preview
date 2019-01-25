@@ -207,6 +207,11 @@ type InstanceOptions struct {
 	// limited. If unset, no quota will be requested for intermediate
 	// certificates.
 	CertificateQuotaUser func(*x509.Certificate) string
+
+	// Status for preview features
+	PreviewMode    bool
+	VetoMode       bool
+	CheckpointMode bool
 }
 
 // SetUpInstance sets up a log instance using the provided configuration, and

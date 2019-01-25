@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/google/certificate-transparency-go/crlsetkey"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/trillian/util"
 	"github.com/google/certificate-transparency-go/x509"
@@ -896,7 +897,14 @@ func buildLogLeafForAddChain(li *logInfo,
 	merkleLeaf ct.MerkleTreeLeaf, chain []*x509.Certificate, isPrecert bool,
 ) (trillian.LogLeaf, error) {
 	raw := extractRawCerts(chain)
-	return util.BuildLogLeaf(li.LogPrefix, merkleLeaf, 0, raw[0], raw[1:], isPrecert)
+	logLeaf, err := util.BuildLogLeaf(li.LogPrefix, merkleLeaf, 0, raw[0], raw[1:], isPrecert)
+	if err != nil {
+		return logLeaf, err
+	}
+	// Generate crlsetkey to be used as a secondary key for fetching the certificate.
+	logLeaf.CrlSetKey = crlsetkey.GenerateCrlSetKeyFromAsn1(raw)
+	return logLeaf, nil
+
 }
 
 // marshalAndWriteAddChainResponse is used by add-chain and add-pre-chain to create and write

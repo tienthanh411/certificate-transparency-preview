@@ -34,6 +34,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/golang/mock/gomock"
+	"github.com/google/certificate-transparency-go/crlsetkey"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/trillian/mockclient"
 	"github.com/google/certificate-transparency-go/trillian/testdata"
@@ -446,6 +447,7 @@ func TestAddChain(t *testing.T) {
 			leaves := logLeavesForCert(t, leafChain, merkleLeaf, false)
 			queuedLeaves := make([]*trillian.QueuedLogLeaf, len(leaves))
 			for i, leaf := range leaves {
+				leaf.CrlSetKey = crlsetkey.GenerateCrlSetKeyFromChain(leafChain)
 				queuedLeaves[i] = &trillian.QueuedLogLeaf{
 					Leaf:   leaf,
 					Status: status.New(codes.OK, "ok").Proto(),
@@ -576,6 +578,7 @@ func TestAddPrechain(t *testing.T) {
 			leaves := logLeavesForCert(t, leafChain, merkleLeaf, true)
 			queuedLeaves := make([]*trillian.QueuedLogLeaf, len(leaves))
 			for i, leaf := range leaves {
+				leaf.CrlSetKey = crlsetkey.GenerateCrlSetKeyFromChain(leafChain)
 				queuedLeaves[i] = &trillian.QueuedLogLeaf{
 					Leaf:   leaf,
 					Status: status.New(codes.OK, "ok").Proto(),
@@ -706,6 +709,7 @@ func TestAddPreviewChain(t *testing.T) {
 			leaves := logLeavesForCert(t, leafChain, merkleLeaf, true)
 			queuedLeaves := make([]*trillian.QueuedLogLeaf, len(leaves))
 			for i, leaf := range leaves {
+				leaf.CrlSetKey = crlsetkey.GenerateCrlSetKeyFromChain(leafChain)
 				queuedLeaves[i] = &trillian.QueuedLogLeaf{
 					Leaf:   leaf,
 					Status: status.New(codes.OK, "ok").Proto(),

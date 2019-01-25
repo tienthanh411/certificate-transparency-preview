@@ -44,7 +44,6 @@ import (
 func TestAddResolution(t *testing.T) {
 	var err error
 	// valid proof chain that is originated from a trusted CA
-	leafCertPEM := readFile(t, "../testdata/leaf01.cert")
 	leaf2CertPEM := readFile(t, "../testdata/leaf02.cert")
 	intCertPEM := readFile(t, "../testdata/int-ca.cert")
 	rootCertPEM := readFile(t, "../testdata/fake-ca.cert")
@@ -71,17 +70,12 @@ func TestAddResolution(t *testing.T) {
 	untrustedCAPrivKeyPEM := readFile(t, "../testdata/ct-http-server.privkey.pem")
 	untrustedCAKeyPassword := "dirk"
 
-	leafPrivKeyPEM := readFile(t, "../testdata/leaf.privkey.pem")
-	leafKeyPassword := "liff"
-
 	validResolution := createResolution(t, make([]byte, 32), trustedCAPrivKeyPEM, trustedCAKeyPassword,
 		trustedCAChainPEM, targetChainPEM)
 	invalidComplaintIDResolution := createResolution(t, []byte{1}, trustedCAPrivKeyPEM, trustedCAKeyPassword,
 		trustedCAChainPEM, targetChainPEM)
 	untrustedResolution := createResolution(t, make([]byte, 32), untrustedCAPrivKeyPEM, untrustedCAKeyPassword,
 		untrustedCAChainPEM, targetChainPEM)
-	signedByLeafResolution := createResolution(t, make([]byte, 32), leafPrivKeyPEM, leafKeyPassword, trustedCAChainPEM,
-		targetChainPEM)
 	invalidSignatureResolution := Resolution{
 		ComplaintID: make([]byte, 32),
 		Signature: tls.DigitallySigned{
@@ -134,13 +128,6 @@ func TestAddResolution(t *testing.T) {
 			want:       http.StatusBadRequest,
 		},
 		{
-			descr:      "signed by leaf",
-			chain:      []string{leafCertPEM, intCertPEM, rootCertPEM},
-			resolution: signedByLeafResolution,
-			toSign:     false,
-			want:       http.StatusBadRequest,
-		},
-		{
 			descr:      "invalid signature",
 			chain:      []string{intCertPEM, rootCertPEM},
 			resolution: invalidSignatureResolution,
@@ -186,6 +173,7 @@ func TestAddResolution(t *testing.T) {
 			leaves := logLeavesForJSONData(t, addResolutionReq, merkleLeaf)
 			queuedLeaves := make([]*trillian.QueuedLogLeaf, len(leaves))
 			for i, leaf := range leaves {
+				addCrlSetKeyFromCrlSetID(&addResolutionReq.Target, leaf)
 				queuedLeaves[i] = &trillian.QueuedLogLeaf{
 					Leaf:   leaf,
 					Status: status.New(codes.OK, "ok").Proto(),
@@ -268,9 +256,6 @@ func TestAddComplaint(t *testing.T) {
 	untrustedCAPrivKeyPEM := readFile(t, "../testdata/ct-http-server.privkey.pem")
 	untrustedCAKeyPassword := "dirk"
 
-	leafPrivKeyPEM := readFile(t, "../testdata/leaf.privkey.pem")
-	leafKeyPassword := "liff"
-
 	validComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
 		big.NewInt(12345), trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM,
 		targetChainPEM)
@@ -279,9 +264,6 @@ func TestAddComplaint(t *testing.T) {
 		targetChainPEM)
 	untrustedComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
 		big.NewInt(12345), untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM,
-		targetChainPEM)
-	signedByLeafComplaint := createComplaint(t, NameImpersonationComplaintType, validProofChainPEM,
-		big.NewInt(12345), leafPrivKeyPEM, leafKeyPassword, validProofChainPEM,
 		targetChainPEM)
 	invalidSignatureComplaint := Complaint{
 		Reason: validComplaint.Reason,
@@ -340,13 +322,6 @@ func TestAddComplaint(t *testing.T) {
 			want:      http.StatusBadRequest,
 		},
 		{
-			descr:     "signed by a leaf key",
-			chain:     []string{leafCertPEM, intCertPEM, rootCertPEM},
-			complaint: signedByLeafComplaint,
-			toSign:    false,
-			want:      http.StatusBadRequest,
-		},
-		{
 			descr:     "invalid signature",
 			chain:     []string{intCertPEM, rootCertPEM},
 			complaint: invalidSignatureComplaint,
@@ -399,6 +374,7 @@ func TestAddComplaint(t *testing.T) {
 			leaves := logLeavesForJSONData(t, addComplaintReq, merkleLeaf)
 			queuedLeaves := make([]*trillian.QueuedLogLeaf, len(leaves))
 			for i, leaf := range leaves {
+				addCrlSetKeyFromCrlSetID(&addComplaintReq.Target, leaf)
 				queuedLeaves[i] = &trillian.QueuedLogLeaf{
 					Leaf:   leaf,
 					Status: status.New(codes.OK, "ok").Proto(),
@@ -442,7 +418,6 @@ func TestAddComplaint(t *testing.T) {
 func TestAddCheckpoint(t *testing.T) {
 	var err error
 	// valid proof chain that is originated from a trusted CA
-	leafCertPEM := readFile(t, "../testdata/leaf01.cert")
 	intCertPEM := readFile(t, "../testdata/int-ca.cert")
 	rootCertPEM := readFile(t, "../testdata/fake-ca.cert")
 	var timestamp uint64 = 1000
@@ -466,12 +441,8 @@ func TestAddCheckpoint(t *testing.T) {
 	untrustedCAPrivKeyPEM := readFile(t, "../testdata/ct-http-server.privkey.pem")
 	untrustedCAKeyPassword := "dirk"
 
-	leafPrivKeyPEM := readFile(t, "../testdata/leaf.privkey.pem")
-	leafKeyPassword := "liff"
-
 	validCheckpoint := createCheckpoint(t, timestamp, startIndex, endIndex, trustedCAPrivKeyPEM, trustedCAKeyPassword, trustedCAChainPEM)
 	untrustedCheckpoint := createCheckpoint(t, timestamp, startIndex, endIndex, untrustedCAPrivKeyPEM, untrustedCAKeyPassword, untrustedCAChainPEM)
-	signedByLeafCheckpoint := createCheckpoint(t, timestamp, startIndex, endIndex, leafPrivKeyPEM, leafKeyPassword, trustedCAChainPEM)
 	invalidSignatureCheckpoint := Checkpoint{
 		Signature: tls.DigitallySigned{
 			Algorithm: tls.SignatureAndHashAlgorithm{
@@ -512,13 +483,6 @@ func TestAddCheckpoint(t *testing.T) {
 			descr:      "signed by untrusted CA",
 			chain:      []string{intCertPEM, rootCertPEM},
 			checkpoint: untrustedCheckpoint,
-			toSign:     false,
-			want:       http.StatusBadRequest,
-		},
-		{
-			descr:      "signed by leaf",
-			chain:      []string{leafCertPEM, intCertPEM, rootCertPEM},
-			checkpoint: signedByLeafCheckpoint,
 			toSign:     false,
 			want:       http.StatusBadRequest,
 		},

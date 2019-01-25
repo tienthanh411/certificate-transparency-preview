@@ -6,10 +6,11 @@ package mockclient
 
 import (
 	context "context"
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	trillian "github.com/google/trillian"
 	grpc "google.golang.org/grpc"
-	reflect "reflect"
 )
 
 // MockTrillianLogClient is a mock of TrillianLogClient interface
@@ -177,6 +178,24 @@ func (m *MockTrillianLogClient) GetLeavesByHash(arg0 context.Context, arg1 *tril
 func (mr *MockTrillianLogClientMockRecorder) GetLeavesByHash(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLeavesByHash", reflect.TypeOf((*MockTrillianLogClient)(nil).GetLeavesByHash), varargs...)
+}
+
+// GetCertHistory mocks base method
+func (m *MockTrillianLogClient) GetCertHistory(arg0 context.Context, arg1 *trillian.GetCertHistoryRequest, arg2 ...grpc.CallOption) (*trillian.GetCertHistoryResponse, error) {
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetCertHistory", varargs...)
+	ret0, _ := ret[0].(*trillian.GetCertHistoryResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCertHistory indicates an expected call of GetCertHistory
+func (mr *MockTrillianLogClientMockRecorder) GetCertHistory(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCertHistory", reflect.TypeOf((*MockTrillianLogClient)(nil).GetCertHistory), varargs...)
 }
 
 // GetLeavesByIndex mocks base method

@@ -66,6 +66,9 @@ var (
 	tracingPercent     = flag.Int("tracing_percent", 0, "Percent of requests to be traced. Zero is a special case to use the DefaultSampler")
 	quotaRemote        = flag.Bool("quota_remote", true, "Enable requesting of quota for IP address sending incoming requests")
 	quotaIntermediate  = flag.Bool("quota_intermediate", true, "Enable requesting of quota for intermediate certificates in sumbmitted chains")
+	previewMode        = flag.Bool("preview_mode", false, "Enable preview mode")
+	vetoMode           = flag.Bool("veto_mode", false, "Enable veto mode")
+	checkpointMode     = flag.Bool("checkpoint_mode", false, "Enable checkpoint mode")
 )
 
 func main() {
@@ -75,6 +78,7 @@ func main() {
 	if *maxGetEntries > 0 {
 		preview.MaxGetEntriesAllowed = *maxGetEntries
 	}
+	glog.Infof("previewMode %t, vetoMode %t, checkpointMode %t", *previewMode, *vetoMode, *checkpointMode)
 
 	var cfg *configpb.LogMultiConfig
 	var err error
@@ -275,11 +279,14 @@ func setupAndRegister(ctx context.Context, client trillian.TrillianLogClient, de
 	}
 
 	opts := preview.InstanceOptions{
-		Config:        cfg,
-		Client:        client,
-		Deadline:      deadline,
-		MetricFactory: prometheus.MetricFactory{},
-		RequestLog:    new(preview.DefaultRequestLog),
+		Config:         cfg,
+		Client:         client,
+		Deadline:       deadline,
+		MetricFactory:  prometheus.MetricFactory{},
+		RequestLog:     new(preview.DefaultRequestLog),
+		PreviewMode:    *previewMode,
+		VetoMode:       *vetoMode,
+		CheckpointMode: *checkpointMode,
 	}
 	if *quotaRemote {
 		glog.Info("Enabling quota for requesting IP")
